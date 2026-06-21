@@ -1,0 +1,185 @@
+/******************************************************************************
+*                 SOFA, Simulation Open-Framework Architecture                *
+*                    (c) 2006 INRIA, USTL, UJF, CNRS, MGH                     *
+*                                                                             *
+* This program is free software; you can redistribute it and/or modify it     *
+* under the terms of the GNU Lesser General Public License as published by    *
+* the Free Software Foundation; either version 2.1 of the License, or (at     *
+* your option) any later version.                                             *
+*                                                                             *
+* This program is distributed in the hope that it will be useful, but WITHOUT *
+* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or       *
+* FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License *
+* for more details.                                                           *
+*                                                                             *
+* You should have received a copy of the GNU Lesser General Public License    *
+* along with this program. If not, see <http://www.gnu.org/licenses/>.        *
+*******************************************************************************
+* Authors: The SOFA Team and external contributors (see Authors.txt)          *
+*                                                                             *
+* Contact information: contact@sofa-framework.org                             *
+******************************************************************************/
+#pragma once
+
+#include <sofa/config.h>
+
+#define SOFA_CORE_ENABLE_CRSMULTIMATRIXACCESSOR 0
+
+#ifdef SOFA_BUILD_SOFA_CORE
+#  define SOFA_TARGET Sofa.Core
+#  define SOFA_CORE_API SOFA_EXPORT_DYNAMIC_LIBRARY
+#else
+#  define SOFA_CORE_API SOFA_IMPORT_DYNAMIC_LIBRARY
+#endif
+
+
+#ifdef SOFA_CORE_TOPOLOGY_ENABLE_DEPRECATION_MESSAGE
+
+#define SOFA_CORE_TOPOLOGY_ATTRIBUTE_DEPRECATED__ALIASES_INDEX() \
+    SOFA_CORE_TOPOLOGY_ATTRIBUTE_DEPRECATED("Index aliases are deprecated, please use sofa::Index.")
+
+#else
+
+#define SOFA_CORE_TOPOLOGY_ATTRIBUTE_DEPRECATED(msg)
+#define SOFA_CORE_TOPOLOGY_ATTRIBUTE_DEPRECATED__ALIASES_INDEX()
+
+#endif // SOFA_CORE_TOPOLOGY_ENABLE_DEPRECATION_MESSAGE
+
+
+#ifdef SOFA_BUILD_SOFA_CORE
+#define SOFA_ATTRIBUTE_DISABLED__COMPLIANT()
+#else
+#define SOFA_ATTRIBUTE_DISABLED__COMPLIANT() \
+    SOFA_ATTRIBUTE_DISABLED("v24.12", "v25.06", "Used only by the deprecated Compliant plugin.")
+#endif
+
+#ifdef SOFA_BUILD_SOFA_CORE
+#define SOFA_ATTRIBUTE_DISABLED__UNNECESSARY_PARAMETER_IN_TYPENAME()
+#else
+#define SOFA_ATTRIBUTE_DISABLED__UNNECESSARY_PARAMETER_IN_TYPENAME() \
+    SOFA_ATTRIBUTE_DISABLED( \
+        "v24.12", "v25.06", \
+        "The parameter is not necessary. Use the function without parameter.")
+#endif
+
+#ifdef SOFA_BUILD_SOFA_CORE
+#define SOFA_ATTRIBUTE_DEPRECATED__REGISTEROBJECT()
+#else
+#define SOFA_ATTRIBUTE_DEPRECATED__REGISTEROBJECT() \
+    SOFA_ATTRIBUTE_DEPRECATED("v24.12", "v25.12", "RegisterObject and the associated implicit registration is being phased out. Use ObjectRegistrationData and explicit registration from now on. See #4429 for more information.")
+#endif
+
+#ifdef SOFA_BUILD_SOFA_CORE
+#define SOFA_ATTRIBUTE_DISABLED__BASEWRITEDATAS()
+#else
+#define SOFA_ATTRIBUTE_DISABLED__BASEWRITEDATAS() \
+    SOFA_ATTRIBUTE_DISABLED("v24.12", "v25.06", "This function is not used.")
+#endif
+
+
+#ifdef SOFA_BUILD_SOFA_CORE
+#define SOFA_ATTRIBUTE_DISABLED__DELETED_ARGUMENTS()
+#else
+#define SOFA_ATTRIBUTE_DISABLED__DELETED_ARGUMENTS() \
+    SOFA_ATTRIBUTE_DISABLED("v25.06", "v25.12", "Signature has changed, use 'getConstraintResolution(const ConstraintParams* cParams, std::vector<ConstraintResolution*> &resTab, unsigned int &offset)' instead")
+#endif
+
+
+#ifdef SOFA_BUILD_SOFA_CORE
+#define SOFA_ATTRIBUTE_DEPRECATED__NAME_CHANGED()
+#else
+#define SOFA_ATTRIBUTE_DEPRECATED__NAME_CHANGED() \
+SOFA_ATTRIBUTE_DEPRECATED("v25.12", "v26.06", "Use getContactDistance or setContactDistance instead.")
+#endif
+
+#ifdef SOFA_BUILD_SOFA_CORE
+
+    #define SOFA_ATTRIBUTE_DISABLED__POSITION()
+    #define SOFA_ATTRIBUTE_DISABLED__REST_POSITION()
+    #define SOFA_ATTRIBUTE_DISABLED__FREE_POSITION()
+    #define SOFA_ATTRIBUTE_DISABLED__RESET_POSITION()
+
+    #define SOFA_ATTRIBUTE_DISABLED__VELOCITY()
+    #define SOFA_ATTRIBUTE_DISABLED__RESET_VELOCITY()
+    #define SOFA_ATTRIBUTE_DISABLED__FREE_VELOCITY()
+    #define SOFA_ATTRIBUTE_DISABLED__NORMAL()
+    #define SOFA_ATTRIBUTE_DISABLED__FORCE()
+    #define SOFA_ATTRIBUTE_DISABLED__EXTERNAL_FORCE()
+    #define SOFA_ATTRIBUTE_DISABLED__DX()
+    #define SOFA_ATTRIBUTE_DISABLED__DFORCE()
+
+    #define SOFA_ATTRIBUTE_DISABLED__CONSTRAINT_JACOBIAN()
+    #define SOFA_ATTRIBUTE_DISABLED__MAPPING_JACOBIAN()
+
+#else
+
+    #define SOFA_ATTRIBUTE_DISABLED__POSITION() SOFA_ATTRIBUTE_DISABLED("v24.12", "v25.06", "Use the variable sofa::core::vec_id::read_access::position  or sofa::core::vec_id::write_access::position instead")
+    #define SOFA_ATTRIBUTE_DISABLED__REST_POSITION() SOFA_ATTRIBUTE_DISABLED("v24.12", "v25.06", "Use the variable sofa::core::vec_id::read_access::restPosition  or sofa::core::vec_id::write_access::restPosition instead")
+    #define SOFA_ATTRIBUTE_DISABLED__FREE_POSITION() SOFA_ATTRIBUTE_DISABLED("v24.12", "v25.06", "Use the variable sofa::core::vec_id::read_access::freePosition  or sofa::core::vec_id::write_access::freePosition instead")
+    #define SOFA_ATTRIBUTE_DISABLED__RESET_POSITION() SOFA_ATTRIBUTE_DISABLED("v24.12", "v25.06", "Use the variable sofa::core::vec_id::read_access::resetPosition  or sofa::core::vec_id::write_access::resetPosition instead")
+
+    #define SOFA_ATTRIBUTE_DISABLED__VELOCITY() SOFA_ATTRIBUTE_DISABLED("v24.12", "v25.06", "Use the variable sofa::core::vec_id::read_access::velocity  or sofa::core::vec_id::write_access::velocity instead")
+    #define SOFA_ATTRIBUTE_DISABLED__RESET_VELOCITY() SOFA_ATTRIBUTE_DISABLED("v24.12", "v25.06", "Use the variable sofa::core::vec_id::read_access::resetVelocity  or sofa::core::vec_id::write_access::resetVelocity instead")
+    #define SOFA_ATTRIBUTE_DISABLED__FREE_VELOCITY() SOFA_ATTRIBUTE_DISABLED("v24.12", "v25.06", "Use the variable sofa::core::vec_id::read_access::freeVelocity  or sofa::core::vec_id::write_access::freeVelocity instead")
+    #define SOFA_ATTRIBUTE_DISABLED__NORMAL() SOFA_ATTRIBUTE_DISABLED("v24.12", "v25.06", "Use the variable sofa::core::vec_id::read_access::normal  or sofa::core::vec_id::write_access::normal instead")
+    #define SOFA_ATTRIBUTE_DISABLED__FORCE() SOFA_ATTRIBUTE_DISABLED("v24.12", "v25.06", "Use the variable sofa::core::vec_id::read_access::force  or sofa::core::vec_id::write_access::force instead")
+    #define SOFA_ATTRIBUTE_DISABLED__EXTERNAL_FORCE() SOFA_ATTRIBUTE_DISABLED("v24.12", "v25.06", "Use the variable sofa::core::vec_id::read_access::externalForce  or sofa::core::vec_id::write_access::externalForce instead")
+    #define SOFA_ATTRIBUTE_DISABLED__DX() SOFA_ATTRIBUTE_DISABLED("v24.12", "v25.06", "Use the variable sofa::core::vec_id::read_access::dx  or sofa::core::vec_id::write_access::dx instead")
+    #define SOFA_ATTRIBUTE_DISABLED__DFORCE() SOFA_ATTRIBUTE_DISABLED("v24.12", "v25.06", "Use the variable sofa::core::vec_id::read_access::dforce  or sofa::core::vec_id::write_access::dforce instead")
+
+    #define SOFA_ATTRIBUTE_DISABLED__CONSTRAINT_JACOBIAN() SOFA_ATTRIBUTE_DISABLED("v24.12", "v25.06", "Use the variable sofa::core::vec_id::read_access::constraintJacobian  or sofa::core::vec_id::write_access::constraintJacobian instead")
+    #define SOFA_ATTRIBUTE_DISABLED__MAPPING_JACOBIAN() SOFA_ATTRIBUTE_DISABLED("v24.12", "v25.06", "Use the variable sofa::core::vec_id::read_access::mappingJacobian  or sofa::core::vec_id::write_access::mappingJacobian instead")
+
+#endif
+
+
+#ifdef SOFA_BUILD_SOFA_CORE
+#define SOFA_ATTRIBUTE_DEPRECATED__TOBASECONSTRAINT()
+#else
+#define SOFA_ATTRIBUTE_DEPRECATED__TOBASECONSTRAINT() \
+    SOFA_ATTRIBUTE_DEPRECATED("v25.12", "v26.12", "Use toBaseLagrangianConstraint instead.")
+#endif
+
+#ifdef SOFA_BUILD_SOFA_CORE
+#define SOFA_ATTRIBUTE_DEPRECATED__REBUILDSYSTEM()
+#else
+#define SOFA_ATTRIBUTE_DEPRECATED__REBUILDSYSTEM() \
+    SOFA_ATTRIBUTE_DEPRECATED("v25.12", "v26.06", "It was an experimental function no longer used.")
+#endif
+
+
+#ifdef SOFA_BUILD_SOFA_CORE
+#define SOFA_ATTRIBUTE_RENAMED__COLLISIONMODEL_PROXIMITY()
+#else
+#define SOFA_ATTRIBUTE_RENAMED__COLLISIONMODEL_PROXIMITY() \
+    SOFA_ATTRIBUTE_DEPRECATED("v25.12", "v26.12", "Data 'proximity' has been renamed to 'contactDistance'")
+#endif
+
+#ifdef SOFA_BUILD_SOFA_CORE
+#define SOFA_ATTRIBUTE_DEPRECATED__COMPUTERESIDUAL()
+#else
+#define SOFA_ATTRIBUTE_DEPRECATED__COMPUTERESIDUAL() \
+    SOFA_ATTRIBUTE_DEPRECATED("v25.12", "v26.06", "The method computeResidual is not used")
+#endif
+
+
+#ifdef SOFA_BUILD_SOFA_CORE
+#define SOFA_CORE_ATTRIBUTE_REMOVE_ASSEMBLY_API()
+#else
+#define SOFA_CORE_ATTRIBUTE_REMOVE_ASSEMBLY_API() \
+    SOFA_ATTRIBUTE_DISABLED("v25.12", "v25.12", "The assembly of the linear system is no longer the responsibility of the solver. Instead, a linear system component lives along with the linear solver. This component is in charge of the assembly.")
+#endif
+
+#ifdef SOFA_BUILD_SOFA_CORE
+#define SOFA_CORE_DEPRECATED_RENAME_CREATOR_BASEOBJECTCREATOR()
+#else
+#define SOFA_CORE_DEPRECATED_RENAME_CREATOR_BASEOBJECTCREATOR() \
+    SOFA_ATTRIBUTE_DISABLED("v25.12", "v26.06", "Type Creator has been renamed to BaseObjectCreator.")
+#endif
+
+#ifdef SOFA_BUILD_SOFA_CORE
+#define SOFA_CORE_DEPRECATED_RENAME_CREATORMAP_OBJECTTEMPLATECREATORMAP()
+#else
+#define SOFA_CORE_DEPRECATED_RENAME_CREATORMAP_OBJECTTEMPLATECREATORMAP() \
+    SOFA_ATTRIBUTE_DISABLED("v25.12", "v26.06", "Type CreatorMap has been renamed to ObjectTemplateCreatorMap.")
+#endif

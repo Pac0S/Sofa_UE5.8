@@ -1,0 +1,9 @@
+.vs/
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+Content/GeneratedTextures/
+*.sln
+*.slnx
+ enc_temp_folder/

@@ -22,7 +22,7 @@ public class SofaSDK : ModuleRules
             }
         }
 
-        PrivateDependencyModuleNames.Add("Boost");
+        PublicDependencyModuleNames.Add("Boost");
 
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {

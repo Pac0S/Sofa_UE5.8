@@ -7,6 +7,7 @@ public class SofaBridge : ModuleRules
         PCHUsage = PCHUsageMode.NoPCHs;
         CppStandard = CppStandardVersion.Cpp20;
         bUseRTTI = true;
+        bUseUnity = false;
 
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {

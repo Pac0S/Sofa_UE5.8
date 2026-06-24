@@ -21,7 +21,8 @@ public class SofaBridge : ModuleRules
             "CoreUObject",
             "Engine",
             "Projects",
-            "SofaSDK"
+            "SofaSDK",
+            "ProceduralMeshComponent"
         });
 
         PrivateDependencyModuleNames.AddRange(new[]

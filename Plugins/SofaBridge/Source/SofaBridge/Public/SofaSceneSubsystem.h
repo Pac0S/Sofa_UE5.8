@@ -33,6 +33,18 @@ public:
     UFUNCTION(BlueprintCallable, Category="SOFA")
     void ResumeSimulation();
 
+    UFUNCTION(BlueprintCallable, Category="SOFA")
+    bool TryGetLatestSnapshot(FSofaFrameSnapshot& OutSnapshot) const;
+
+    UFUNCTION(BlueprintCallable, Category = "SOFA")
+    bool SetInteractorTargetPose(FName TargetId, const FTransform& TargetPose);
+
+    UFUNCTION(BlueprintCallable, Category = "SOFA")
+    bool ClearInteractorTargetPose(FName TargetId);
+
+    UFUNCTION(BlueprintCallable, Category = "SOFA")
+    bool GetObjectMaterialPath(FName ObjectId, FString& OutMaterialPath) const;
+
 private:
     TUniquePtr<FSofaSimulationService> Service;
 };

@@ -4,6 +4,7 @@ DerivedDataCache/
 Intermediate/
 Saved/
 Content/GeneratedTextures/
+Build/
 *.sln
 *.slnx
  enc_temp_folder/

@@ -7,23 +7,43 @@ IMPLEMENT_MODULE(FSofaBridgeModule, SofaBridge)
 
 void FSofaBridgeModule::StartupModule()
 {
-    FString PluginBaseDir = IPluginManager::Get().FindPlugin("SofaBridge")->GetBaseDir();
-    FString DllDir = FPaths::Combine(PluginBaseDir, TEXT("Binaries"), TEXT("Win64"));
+    const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("SofaBridge"));
+    if (!Plugin.IsValid())
+    {
+        return;
+    }
 
-    TArray<FString> SofaDlls = {
-        TEXT("Sofa.Helper.dll"),
-        TEXT("Sofa.Type.dll"),
-        TEXT("Sofa.DefaultType.dll"),
-        TEXT("Sofa.Core.dll"),
-        TEXT("Sofa.Simulation.Core.dll"),
-        TEXT("Sofa.Simulation.Common.dll"),
-        TEXT("Sofa.Simulation.Graph.dll"),
-        TEXT("Sofa.SimpleApi.dll"),
+    TArray<FString> CoreDlls = {
+        TEXT("Sofa.Helper"),
+        TEXT("Sofa.Type"),
+        TEXT("Sofa.DefaultType"),
+        TEXT("Sofa.Core"),
+        TEXT("Sofa.Simulation.Core"),
+        TEXT("Sofa.Simulation.Common"),
+        TEXT("Sofa.Simulation.Graph"),
+        TEXT("Sofa.SimpleApi"),
+        TEXT("Sofa.LinearAlgebra"),
+        TEXT("Sofa.Geometry"),
     };
 
-    for (const FString& DllName : SofaDlls)
+    TArray<FString> SofaRuntimePlugins = {
+        TEXT("Sofa.Component.ODESolver.Backward"),
+        TEXT("Sofa.Component.LinearSolver.Direct"),
+        TEXT("Sofa.Component.LinearSolver.Iterative"),
+        TEXT("Sofa.Component.LinearSolver.Ordering"),
+        TEXT("Sofa.Component.LinearSystem"),
+        TEXT("Sofa.Component.StateContainer"),
+        TEXT("Sofa.Component.Mass"),
+        TEXT("Sofa.Component.IO.Mesh"),
+        TEXT("Sofa.Component.Topology.Container.Grid"),
+        TEXT("Sofa.Component.Topology.Container.Dynamic"),
+        TEXT("Sofa.Component.Topology.Container.Constant"),
+        TEXT("Sofa.Component.SolidMechanics.FEM.Elastic"),
+    };
+
+    for (const FString& DllName : CoreDlls)
     {
-        FString FullPath = FPaths::Combine(DllDir, DllName);
+        FString FullPath = FPaths::Combine(SofaDllDirectory, DllName) + ".dll";
         void* Handle = FPlatformProcess::GetDllHandle(*FullPath);
 
         if (!Handle)
@@ -39,4 +59,9 @@ void FSofaBridgeModule::StartupModule()
 
 void FSofaBridgeModule::ShutdownModule()
 {
+    if (!SofaDllDirectory.IsEmpty())
+    {
+        FPlatformProcess::PopDllDirectory(*SofaDllDirectory);
+        SofaDllDirectory.Reset();
+    }
 }

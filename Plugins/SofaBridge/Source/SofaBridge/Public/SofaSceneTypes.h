@@ -144,3 +144,24 @@ struct FSofaFrameSnapshot
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA")
     TArray<FSofaObjectState> Objects;
 };
+
+USTRUCT(BlueprintType)
+struct SOFABRIDGE_API FSofaPrototypeSceneRequest
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    bool bUseSceneFilePath = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    FString SceneFilePath;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    FString SceneName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    FString ExternalScenesDirectory;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    FString RelativeScenesDirectory = TEXT("SofaScenes");
+};

@@ -46,6 +46,24 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA Test Motion")
     FTransform MotionBaseTransform = FTransform::Identity;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA Test")
+    bool bAutoStartSimulation = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA Test")
+    bool bUseExplicitSceneFilePath = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA Test", meta=(EditCondition="bUseExplicitSceneFilePath"))
+    FString SceneFilePath;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA Test", meta=(EditCondition="!bUseExplicitSceneFilePath"))
+    FString SceneName = TEXT("liver");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA Test")
+    FString ExternalScenesDirectory = TEXT("C:/Users/Pakito/Documents/Projets/Anisim/SofaScenes");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA Test")
+    FString RelativeScenesDirectory = TEXT("SofaScenes");
+
     UFUNCTION(BlueprintCallable, Category="Sofa")
     bool GetObjectMaterialPath(FName ObjectId, FString& OutMaterialPath) const;
 

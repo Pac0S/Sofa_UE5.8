@@ -18,15 +18,38 @@ void ASofaTestActor::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (SofaSubsystem = GetWorld()->GetSubsystem<USofaSceneSubsystem>())
+    if (!bAutoStartSimulation)
     {
-        SofaSubsystem->StartPrototypeSimulation();
-        UE_LOG(LogTemp, Log, TEXT("SofaTestActor: simulation started"));
-        FString MaterialPath;
-        GetObjectMaterialPath(FName("Liver01"), MaterialPath);
-        ProceduralSurfaceComponent->SetMaterialPath(MaterialPath);
-        ProceduralSurfaceComponent->InitializeMaterial();
+        UE_LOG(LogTemp, Log, TEXT("SOFA test actor: auto start disabled."));
+        return;
     }
+
+    SofaSubsystem = GetWorld()->GetSubsystem<USofaSceneSubsystem>();
+    if (!SofaSubsystem)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SOFA test actor: failed to get USofaSceneSubsystem."));
+        return;
+        
+    }
+
+    FSofaPrototypeSceneRequest Request;
+    Request.bUseSceneFilePath = bUseExplicitSceneFilePath;
+    Request.SceneFilePath = SceneFilePath;
+    Request.SceneName = SceneName;
+    Request.ExternalScenesDirectory = ExternalScenesDirectory;
+    Request.RelativeScenesDirectory = RelativeScenesDirectory;
+
+    SofaSubsystem->ConfigurePrototypeScene(Request);
+
+    const bool bStarted = SofaSubsystem->StartPrototypeSimulation();
+    UE_LOG(LogTemp, Log, TEXT("SOFA test actor: StartPrototypeSimulation returned %s"),
+        bStarted ? TEXT("true") : TEXT("false"));
+
+    //MaterialPath only exists after SofaSceneBuilder construction that is called through StartPrototypeSimulation.
+    FString MaterialPath;
+    GetObjectMaterialPath(FName("Liver01"), MaterialPath);
+    ProceduralSurfaceComponent->SetMaterialPath(MaterialPath);
+    ProceduralSurfaceComponent->InitializeMaterial();
 }
 
 void ASofaTestActor::EndPlay(const EEndPlayReason::Type EndPlayReason)

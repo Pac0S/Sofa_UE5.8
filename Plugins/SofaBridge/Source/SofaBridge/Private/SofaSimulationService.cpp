@@ -59,18 +59,23 @@ namespace
         return Parent->getChild(ChildName);
     }
 
-    const FSofaRuntimeObjectDescriptor* FindRuntimeObjectForInteractor(const FSofaRuntimeScene &SofaContext, FName InteractorId)
+    const FSofaRuntimeObjectDescriptor* FindRuntimeObjectForInteractor(
+        const FSofaRuntimeScene& SofaContext,
+        FName InteractorId)
     {
-        if (!&SofaContext)
+        const FString InteractorIdString = InteractorId.ToString();
+
+        FString ParentNodeName;
+        FString ComponentName;
+        if (!InteractorIdString.Split(TEXT("."), &ParentNodeName, &ComponentName))
         {
             return nullptr;
         }
 
-        const FString InteractorIdString = InteractorId.ToString();
-
         for (const FSofaRuntimeObjectDescriptor& RuntimeObj : SofaContext.RuntimeObjects)
         {
-            if (RuntimeObj.ObjectId == InteractorIdString)
+            if (RuntimeObj.SimulationNodeName == ParentNodeName ||
+                RuntimeObj.ObjectId == ParentNodeName)
             {
                 return &RuntimeObj;
             }
@@ -131,45 +136,60 @@ bool FSofaSimulationService::InitializeSofaRuntime()
 #endif
 }
 
-bool FSofaSimulationService::StartSimulation()
-{
-    if (!Worker.IsValid())
-    {
-        return false;
-    }
-
-    /*if (!BuildPrototypeScene())
-    {
-        State = ESofaSimState::Error;
-        return false;
-    }
-
-    State = ESofaSimState::Running;
-    return Worker->Start();*/
-    return false;
-}
-
 bool FSofaSimulationService::StartPrototypeSimulation(const FSofaPrototypeSceneRequest& Request)
 {
-    if (!Worker.IsValid())
+#if !SOFA_SDK_ENABLED
+    return false;
+#else
+    if (!SofaContext)
     {
+        State = ESofaSimState::Error;
+        UE_LOG(LogSofaService, Error, TEXT("BuildPrototypeScene failed: SofaContext is null."));
         return false;
     }
-    FSofaRuntimeScene RuntimeScene;
+
+    if (!Worker.IsValid())
+    {
+        State = ESofaSimState::Error;
+        UE_LOG(LogSofaService, Error, TEXT("BuildPrototypeScene failed: Worker is not valid."));
+        return false;
+    }
+
+    if (Request.SceneFilePath.IsEmpty() && Request.SceneName.IsEmpty())
+    {
+        State = ESofaSimState::Error;
+        UE_LOG(LogSofaService, Error, TEXT("BuildPrototypeScene failed: no SceneFilePath or SceneName provided."));
+        return false;
+    }
+
+    UE_LOG(LogSofaService, Log,
+        TEXT("Building prototype SOFA scene. UseFilePath=%s SceneFilePath=%s SceneName=%s"),
+        Request.bUseSceneFilePath ? TEXT("true") : TEXT("false"),
+        *Request.SceneFilePath,
+        *Request.SceneName);
 
     const FSofaSceneBuilder::FBuildResult BuildResult =
         FSofaSceneBuilder::BuildPrototypeScene(*SofaContext, Request);
 
     if (!BuildResult.bSuccess)
     {
-        UE_LOG(LogTemp, Error, TEXT("SOFA scene build failed: %s"), *BuildResult.ErrorMessage);
         State = ESofaSimState::Error;
+        UE_LOG(LogSofaService, Error, TEXT("Scene build failed: %s"), *BuildResult.ErrorMessage);
         return false;
     }
 
-    UE_LOG(LogTemp, Log, TEXT("SOFA scene build succeeded."));
+    InitializeInteractorBindings();
+
+    FrameCounter = 0;
+    SimTime = 0.0;
+
+    UE_LOG(LogSofaService, Log,
+        TEXT("Prototype SOFA scene built successfully from '%s'"),
+        Request.bUseSceneFilePath ? *Request.SceneFilePath : *Request.SceneName);
+
     State = ESofaSimState::Running;
     return Worker->Start();
+#endif
 }
 
 
@@ -235,52 +255,6 @@ void FSofaSimulationService::HandleCommand(const FSofaCommand& Command)
     default:
         break;
     }
-}
-
-bool FSofaSimulationService::BuildPrototypeScene(const FSofaPrototypeSceneRequest& Request)
-{
-#if !SOFA_SDK_ENABLED
-    return false;
-#else
-    if (!SofaContext)
-    {
-        UE_LOG(LogSofaService, Error, TEXT("BuildPrototypeScene failed: SofaContext is null."));
-        return false;
-    }
-
-    if (Request.SceneFilePath.IsEmpty() && Request.SceneName.IsEmpty())
-    {
-        UE_LOG(LogSofaService, Error,
-            TEXT("BuildPrototypeScene failed: no SceneFilePath or SceneName provided."));
-        return false;
-    }
-
-    UE_LOG(LogSofaService, Log,
-        TEXT("Building prototype SOFA scene. UseFilePath=%s SceneFilePath=%s SceneName=%s"),
-        Request.bUseSceneFilePath ? TEXT("true") : TEXT("false"),
-        *Request.SceneFilePath,
-        *Request.SceneName);
-
-    const FSofaSceneBuilder::FBuildResult BuildResult =
-        FSofaSceneBuilder::BuildPrototypeScene(*SofaContext, Request);
-
-    if (!BuildResult.bSuccess)
-    {
-        UE_LOG(LogSofaService, Error, TEXT("Scene build failed: %s"), *BuildResult.ErrorMessage);
-        return false;
-    }
-
-    InitializeInteractorBindings();
-
-    FrameCounter = 0;
-    SimTime = 0.0;
-
-    UE_LOG(LogSofaService, Log,
-        TEXT("Prototype SOFA scene built successfully from '%s'"),
-        Request.bUseSceneFilePath ? *Request.SceneFilePath : *Request.SceneName);
-
-    return true;
-#endif
 }
 
 bool FSofaSimulationService::StepSimulation(double DeltaTime)
@@ -430,55 +404,84 @@ void FSofaSimulationService::ApplySingleInteractorTarget(
 
 void FSofaSimulationService::InitializeInteractorBindings()
 {
-
     InteractorBindings.Empty();
 
     if (!SofaContext || !SofaContext->RootNode)
     {
-        UE_LOG(LogSofaService, Warning, TEXT("InitializeInteractorBindings: invalid SOFA context or root node"));
+        UE_LOG(LogSofaService, Warning,
+            TEXT("InitializeInteractorBindings: invalid SOFA context or root node"));
         return;
     }
 
-    for (const FSofaDeformableObjectConfig& ObjConfig : ActiveSceneConfig.Objects)
+    for (const FSofaRuntimeObjectDescriptor& RuntimeObj : SofaContext->RuntimeObjects)
     {
-        if (ObjConfig.Id.IsEmpty())
+        if (RuntimeObj.ObjectId.IsEmpty() || RuntimeObj.SimulationNodeName.IsEmpty())
         {
             continue;
         }
 
         sofa::simulation::Node* ObjectNode =
-            SofaContext->RootNode->getChild(TCHAR_TO_UTF8(*ObjConfig.Id));
+            SofaContext->RootNode->getChild(TCHAR_TO_UTF8(*RuntimeObj.SimulationNodeName));
 
         if (!ObjectNode)
         {
             UE_LOG(LogSofaService, Warning,
-                TEXT("InitializeInteractorBindings: child node '%s' not found"),
-                *ObjConfig.Id);
+                TEXT("InitializeInteractorBindings: child node '%s' not found for object '%s'"),
+                *RuntimeObj.SimulationNodeName,
+                *RuntimeObj.ObjectId);
             continue;
         }
 
-        if (sofa::core::objectmodel::BaseObject* ForceObject =
-            ObjectNode->getObject(std::string("InteractorForce")))
+        if (!RuntimeObj.InteractorForceFieldName.IsEmpty())
         {
-            const FName BindingId(*FString::Printf(TEXT("%s.InteractorForce"), *ObjConfig.Id));
-            RegisterInteractorBinding(BindingId, ForceObject);
+            if (sofa::core::objectmodel::BaseObject* ForceObject =
+                ObjectNode->getObject(std::string(TCHAR_TO_UTF8(*RuntimeObj.InteractorForceFieldName))))
+            {
+                const FName BindingId(
+                    *FString::Printf(TEXT("%s.%s"),
+                        *RuntimeObj.ObjectId,
+                        *RuntimeObj.InteractorForceFieldName));
 
-            UE_LOG(LogSofaService, Log,
-                TEXT("Registered binding '%s' -> %s"),
-                *BindingId.ToString(),
-                UTF8_TO_TCHAR(ForceObject->getName().c_str()));
+                RegisterInteractorBinding(BindingId, ForceObject);
+
+                UE_LOG(LogSofaService, Log,
+                    TEXT("Registered binding '%s' -> %s"),
+                    *BindingId.ToString(),
+                    UTF8_TO_TCHAR(ForceObject->getName().c_str()));
+            }
+            else
+            {
+                UE_LOG(LogSofaService, Warning,
+                    TEXT("InitializeInteractorBindings: object '%s' not found in node '%s'"),
+                    *RuntimeObj.InteractorForceFieldName,
+                    *RuntimeObj.SimulationNodeName);
+            }
         }
 
-        if (sofa::core::objectmodel::BaseObject* MStateObject =
-            ObjectNode->getObject(std::string("mstate")))
+        if (!RuntimeObj.MechanicalObjectName.IsEmpty())
         {
-            const FName BindingId(*FString::Printf(TEXT("%s.mstate"), *ObjConfig.Id));
-            RegisterInteractorBinding(BindingId, MStateObject);
+            if (sofa::core::objectmodel::BaseObject* MStateObject =
+                ObjectNode->getObject(std::string(TCHAR_TO_UTF8(*RuntimeObj.MechanicalObjectName))))
+            {
+                const FName BindingId(
+                    *FString::Printf(TEXT("%s.%s"),
+                        *RuntimeObj.ObjectId,
+                        *RuntimeObj.MechanicalObjectName));
 
-            UE_LOG(LogSofaService, Log,
-                TEXT("Registered binding '%s' -> %s"),
-                *BindingId.ToString(),
-                UTF8_TO_TCHAR(MStateObject->getName().c_str()));
+                RegisterInteractorBinding(BindingId, MStateObject);
+
+                UE_LOG(LogSofaService, Log,
+                    TEXT("Registered binding '%s' -> %s"),
+                    *BindingId.ToString(),
+                    UTF8_TO_TCHAR(MStateObject->getName().c_str()));
+            }
+            else
+            {
+                UE_LOG(LogSofaService, Warning,
+                    TEXT("InitializeInteractorBindings: object '%s' not found in node '%s'"),
+                    *RuntimeObj.MechanicalObjectName,
+                    *RuntimeObj.SimulationNodeName);
+            }
         }
     }
 }

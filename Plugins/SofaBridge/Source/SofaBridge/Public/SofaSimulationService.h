@@ -25,17 +25,14 @@ public:
     bool Initialize();
     void Shutdown();
 
-    bool StartSimulation();
     bool StartPrototypeSimulation(const FSofaPrototypeSceneRequest& Request);
     void StopSimulation();
+    bool StepSimulation(double DeltaTime);
 
     void EnqueueCommand(const FSofaCommand& Command);
     bool TryGetLatestSnapshot(FSofaFrameSnapshot& OutSnapshot);
 
     ESofaSimState GetState() const { return State; }
-
-    bool BuildPrototypeScene(const FSofaPrototypeSceneRequest& Request);
-    bool StepSimulation(double DeltaTime);
 
     bool RegisterInteractorBinding(FName TargetId, sofa::core::objectmodel::BaseObject* TargetObject);
     bool SetInteractorTargetPose(FName TargetId, const FTransform& TargetPose);

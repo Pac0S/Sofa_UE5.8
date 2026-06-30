@@ -90,14 +90,6 @@ void USofaSceneSubsystem::ConfigurePrototypeScene(const FSofaPrototypeSceneReque
         *Request.SceneName);
 }
 
-void USofaSceneSubsystem::StartSimulation()
-{
-    if (Service)
-    {
-        Service->StartSimulation();
-    }
-}
-
 bool USofaSceneSubsystem::StartPrototypeSimulation()
 {
     if (!bHasPrototypeSceneRequest)

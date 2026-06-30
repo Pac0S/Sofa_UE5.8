@@ -19,9 +19,5 @@ public:
 public:
     static FBuildResult BuildPrototypeScene(
         FSofaRuntimeScene& SofaContext,
-        const FSofaSceneConfig& Config);
-
-    static FBuildResult BuildPrototypeScene(
-        FSofaRuntimeScene& SofaContext,
         const FSofaPrototypeSceneRequest& Request);
 };

@@ -25,9 +25,6 @@ public:
     void ConfigurePrototypeScene(const FSofaPrototypeSceneRequest& Request);
 
     UFUNCTION(BlueprintCallable, Category="SOFA|Simulation")
-    void StartSimulation();
-
-    UFUNCTION(BlueprintCallable, Category="SOFA|Simulation")
     bool StartPrototypeSimulation();
 
     UFUNCTION(BlueprintCallable, Category="SOFA|Simulation")

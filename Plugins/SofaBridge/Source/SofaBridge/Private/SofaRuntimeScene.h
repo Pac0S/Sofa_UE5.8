@@ -9,6 +9,7 @@ struct FSofaRuntimeObjectDescriptor
 
     FString MechanicalObjectName = TEXT("mstate");
     FString TopologyContainerName = TEXT("topo");
+    FString InteractorForceFieldName = TEXT("InteractorForce");
 
     FString SurfaceNodeName = TEXT("Surface");
     FString SurfaceTopologyName = TEXT("surfaceTopo");

@@ -79,46 +79,12 @@ TStatId USofaSceneSubsystem::GetStatId() const
     RETURN_QUICK_DECLARE_CYCLE_STAT(USofaSceneSubsystem, STATGROUP_Tickables);
 }
 
-void USofaSceneSubsystem::ConfigurePrototypeScene(const FSofaPrototypeSceneRequest& Request)
+void USofaSceneSubsystem::StartPrototypeSimulation()
 {
-    PendingPrototypeSceneRequest = Request;
-    bHasPrototypeSceneRequest = true;
-
-    UE_LOG(LogTemp, Log, TEXT("SOFA prototype scene configured. UseFilePath=%s SceneFilePath=%s SceneName=%s"),
-        Request.bUseSceneFilePath ? TEXT("true") : TEXT("false"),
-        *Request.SceneFilePath,
-        *Request.SceneName);
-}
-
-bool USofaSceneSubsystem::StartPrototypeSimulation()
-{
-    if (!bHasPrototypeSceneRequest)
-    {
-        UE_LOG(LogTemp, Error, TEXT("Cannot start SOFA prototype simulation: no prototype scene request configured."));
-        return false;
-    }
-
-    UWorld* World = GetWorld();
-    if (!World)
-    {
-        UE_LOG(LogTemp, Error, TEXT("Cannot start SOFA prototype simulation: invalid world."));
-        return false;
-    }
-
-
-    bool bStarted = false;
     if (Service)
     {
-        bStarted = Service->StartPrototypeSimulation(PendingPrototypeSceneRequest);
+        Service->StartSimulation();
     }
-    if (!bStarted)
-    {
-        UE_LOG(LogTemp, Error, TEXT("Failed to start SOFA prototype simulation."));
-        return false;
-    }
-
-    UE_LOG(LogTemp, Log, TEXT("SOFA prototype simulation started successfully."));
-    return true;
 }
 
 void USofaSceneSubsystem::StopPrototypeSimulation()
@@ -153,22 +119,6 @@ void USofaSceneSubsystem::ResumeSimulation()
     Service->EnqueueCommand(Cmd);
 }
 
-void USofaSceneSubsystem::ClearPrototypeSceneRequest()
-{
-    PendingPrototypeSceneRequest = FSofaPrototypeSceneRequest();
-    bHasPrototypeSceneRequest = false;
-}
-
-bool USofaSceneSubsystem::HasPrototypeSceneRequest() const
-{
-    return bHasPrototypeSceneRequest;
-}
-
-FSofaPrototypeSceneRequest USofaSceneSubsystem::GetPrototypeSceneRequest() const
-{
-    return PendingPrototypeSceneRequest;
-}
-
 bool USofaSceneSubsystem::TryGetLatestSnapshot(FSofaFrameSnapshot& OutSnapshot) const
 {
     if (!Service)
@@ -201,8 +151,18 @@ bool USofaSceneSubsystem::GetObjectMaterialPath(FName ObjectId, FString& OutMate
 {
     if (!Service)
     {
-        OutMaterialPath.Reset();
         return false;
     }
-    return Service->GetRuntimeObjectMaterialPath(ObjectId, OutMaterialPath);
+    FSofaSceneConfig Config = Service->GetActiveSceneConfig();
+    OutMaterialPath.Reset();
+
+    for (const FSofaDeformableObjectConfig& ObjConfig : Config.Objects)
+    {
+        if (FName(*ObjConfig.Id) == ObjectId)
+        {
+            OutMaterialPath = ObjConfig.VisualConfig.MaterialPath;
+            return !OutMaterialPath.IsEmpty();
+        }
+    }
+    return false;
 }

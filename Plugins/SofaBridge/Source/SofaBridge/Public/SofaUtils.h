@@ -5,7 +5,6 @@
 #include "SofaSceneConfig.h"
 
 struct FSofaRuntimeScene;
-struct FSofaRuntimeObjectDescriptor;
 
 namespace SofaMaterialUtils
 {
@@ -44,33 +43,33 @@ namespace SofaMaterialUtils
 
 namespace SofaCoordinateSystem 
 {
-    FVector SofaToUnrealPosition(const FVector& InSofaPosition,const FSofaRuntimeObjectDescriptor& RuntimeObj);
-    FVector UnrealToSofaPosition(const FVector& InUnrealPosition, const FSofaRuntimeObjectDescriptor& RuntimeObj);
+    FVector SofaToUnrealPosition(const FVector& InPosition, const FSofaDeformableObjectConfig& Config);
+    FVector UnrealToSofaPosition(const FVector& InPosition, const FSofaDeformableObjectConfig& Config);
 }
 
 namespace SofaSceneExtractor
 {
     bool ExtractMechanicalDebugPoints(
         const FSofaRuntimeScene& Scene,
-        const FSofaRuntimeObjectDescriptor& RuntimeObj,
+        const FSofaDeformableObjectConfig& Config,
         TArray<FSofaDebugPoint>& OutPoints,
         FString& OutError);
     
     bool ExtractMechanicalSurfaceDebugTriangles(
         const FSofaRuntimeScene& Scene,
-        const FSofaRuntimeObjectDescriptor& RuntimeObj,
+        const FSofaDeformableObjectConfig& Config,
         TArray<FSofaDebugTriangle>& OutTriangles,
         FString& OutError);
 
     bool ExtractVisualSurfaceMesh(
         const FSofaRuntimeScene& Scene,
-        const FSofaRuntimeObjectDescriptor& RuntimeObj,
+        const FSofaDeformableObjectConfig& Config,
         FSofaSurfaceMeshState& OutMesh,
         FString& OutError);
 
     bool ExtractRenderableSurfaceMesh(
         const FSofaRuntimeScene& Scene,
-        const FSofaRuntimeObjectDescriptor& RuntimeObj,
+        const FSofaDeformableObjectConfig& Config,
         FSofaObjectState& OutState,
         FString& OutError);
 }

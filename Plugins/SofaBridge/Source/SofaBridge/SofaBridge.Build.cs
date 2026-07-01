@@ -22,16 +22,13 @@ public class SofaBridge : ModuleRules
             "Engine",
             "Projects",
             "SofaSDK",
-            "ProceduralMeshComponent",
+            "ProceduralMeshComponent"
         });
 
         PrivateDependencyModuleNames.AddRange(new[]
         {
             "Slate",
-            "SlateCore",
-            "XmlParser",
-            "Json",
-            "JsonUtilities"
+            "SlateCore"
         });
     }
 }

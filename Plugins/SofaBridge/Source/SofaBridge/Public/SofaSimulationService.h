@@ -9,7 +9,6 @@
 class FSofaSimWorker;
 class FSofaSceneBuilder;
 struct FSofaRuntimeScene;
-struct FSofaRuntimeObjectDescriptor;
 
 namespace sofa::core::objectmodel
 {
@@ -25,20 +24,20 @@ public:
     bool Initialize();
     void Shutdown();
 
-    bool StartPrototypeSimulation(const FSofaPrototypeSceneRequest& Request);
+    bool StartSimulation();
     void StopSimulation();
-    bool StepSimulation(double DeltaTime);
 
     void EnqueueCommand(const FSofaCommand& Command);
     bool TryGetLatestSnapshot(FSofaFrameSnapshot& OutSnapshot);
 
     ESofaSimState GetState() const { return State; }
 
+    bool BuildPrototypeScene();
+    bool StepSimulation(double DeltaTime);
+
     bool RegisterInteractorBinding(FName TargetId, sofa::core::objectmodel::BaseObject* TargetObject);
     bool SetInteractorTargetPose(FName TargetId, const FTransform& TargetPose);
     bool ClearInteractorTargetPose(FName TargetId);
-
-    bool GetRuntimeObjectMaterialPath(FName ObjectId, FString& OutMaterialPath) const;
 
     FSofaSceneConfig GetActiveSceneConfig() const { return ActiveSceneConfig; }
 
@@ -51,8 +50,8 @@ private:
     void ProcessPendingCommands();
     void HandleCommand(const FSofaCommand& Command);
 
-    void ApplyInteractorTargetsToSimulation();
-    void ApplySingleInteractorTarget(sofa::core::objectmodel::BaseObject* TargetObject, const FSofaRuntimeObjectDescriptor& RuntimeObj, const FTransform& UEPose);
+    void ApplyInteractorTargetsToSimulation(const FSofaDeformableObjectConfig& Config);
+    void ApplySingleInteractorTarget(sofa::core::objectmodel::BaseObject* TargetObject, const FSofaDeformableObjectConfig& Config, const FTransform& UEPose);
 
     void InitializeInteractorBindings();
 

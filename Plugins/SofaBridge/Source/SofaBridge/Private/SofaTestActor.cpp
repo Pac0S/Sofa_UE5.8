@@ -102,22 +102,6 @@ void ASofaTestActor::Tick(float DeltaTime)
             DrawSofaDebug(ObjState);
         }
     }
-
-    // Apply periodic force if enabled
-    if (bEnablePeriodicMotion && SofaSubsystem)
-    {
-        const float T = GetWorld()->GetTimeSeconds();
-        const float Offset = MotionAmplitudeCm * FMath::Sin(2.f * PI * MotionFrequencyHz * T);
-
-        FTransform Target = MotionBaseTransform;
-        Target.AddToTranslation(MotionAxis.GetSafeNormal() * Offset);
-
-        SofaSubsystem->SetInteractorTargetPose(MotionTargetId, Target);
-    }
-    else if (SofaSubsystem)
-    {
-        SofaSubsystem->ClearInteractorTargetPose(MotionTargetId);
-    }
 }
 
 void ASofaTestActor::SetSofaDebugVisible(bool bVisible)

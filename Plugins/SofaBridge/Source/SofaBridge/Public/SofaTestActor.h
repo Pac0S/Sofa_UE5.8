@@ -29,12 +29,6 @@ public:
     bool IsSofaDebugVisible() const { return bShowSofaDebug; }
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA Test Motion")
-    bool bEnablePeriodicMotion = false;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA Test Motion")
-    FName MotionTargetId = TEXT("Liver01.mstate");
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA Test Motion")
     FVector MotionAxis = FVector(0.f, 0.f, 1.f);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA Test Motion")

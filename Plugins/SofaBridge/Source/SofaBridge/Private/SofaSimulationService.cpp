@@ -16,39 +16,6 @@ namespace
     using sofa::component::statecontainer::MechanicalObject;
     using sofa::defaulttype::Vec3Types;
 
-    struct FSofaInteractorBinding
-    {
-        FName TargetId = NAME_None;
-        sofa::core::objectmodel::BaseObject* TargetObject = nullptr;
-        sofa::component::statecontainer::MechanicalObject<sofa::defaulttype::Vec3Types>* GoalMechanicalObject = nullptr;
-
-        bool bIsValid() const
-        {
-            return TargetObject != nullptr || GoalMechanicalObject != nullptr;
-        }
-    };
-
-    static void ApplyTargetToGoalMechanicalObject(
-        sofa::component::statecontainer::MechanicalObject<sofa::defaulttype::Vec3Types>& GoalMO,
-        const FSofaRuntimeObjectDescriptor& RuntimeObj,
-        const FTransform& UEPose)
-    {
-        using Coord = sofa::defaulttype::Vec3Types::Coord;
-
-        const FVector SofaPos =
-            SofaCoordinateSystem::UnrealToSofaPosition(UEPose.GetLocation(), RuntimeObj);
-
-        auto WriteAccessor = GoalMO.writePositions();
-        auto& Positions = *WriteAccessor;
-
-        if (Positions.empty())
-        {
-            Positions.resize(1);
-        }
-
-        Positions[0] = Coord(SofaPos.X, SofaPos.Y, SofaPos.Z);
-    }
-
     static Node* FindChildNodeByName(Node* Parent, const char* ChildName)
     {
         if (!Parent || !ChildName)
@@ -178,8 +145,6 @@ bool FSofaSimulationService::StartPrototypeSimulation(const FSofaPrototypeSceneR
         return false;
     }
 
-    InitializeInteractorBindings();
-
     FrameCounter = 0;
     SimTime = 0.0;
 
@@ -282,8 +247,6 @@ bool FSofaSimulationService::StepSimulation(double DeltaTime)
         return false;
     }
 
-    ApplyInteractorTargetsToSimulation();
-
     sofa::simulation::node::animate(SofaContext->RootNode.get(), DeltaTime);
 
     SimTime += DeltaTime;
@@ -315,175 +278,6 @@ bool FSofaSimulationService::StepSimulation(double DeltaTime)
     PublishSnapshot(Snapshot);
     return true;
 #endif
-}
-
-bool FSofaSimulationService::RegisterInteractorBinding(
-    FName TargetId,
-    sofa::core::objectmodel::BaseObject* TargetObject)
-{
-    if (!TargetObject)
-    {
-        return false;
-    }
-
-    InteractorBindings.Add(TargetId, TargetObject);
-    return true;
-}
-
-bool FSofaSimulationService::SetInteractorTargetPose(FName TargetId, const FTransform& TargetPose)
-{
-    FScopeLock Lock(&InteractorTargetsMutex);
-    PendingInteractorTargetPoses.Add(TargetId, TargetPose);
-    return true;
-}
-
-bool FSofaSimulationService::ClearInteractorTargetPose(FName TargetId)
-{
-    FScopeLock Lock(&InteractorTargetsMutex);
-    PendingInteractorTargetPoses.Remove(TargetId);
-    return true;
-}
-
-void FSofaSimulationService::ApplyInteractorTargetsToSimulation()
-{
-    TMap<FName, FTransform> LocalTargets;
-    {
-        FScopeLock Lock(&InteractorTargetsMutex);
-        LocalTargets = PendingInteractorTargetPoses;
-    }
-
-    if (LocalTargets.IsEmpty())
-    {
-        return;
-    }
-
-    for (const TPair<FName, FTransform>& It : LocalTargets)
-    {
-        sofa::core::objectmodel::BaseObject* const* FoundTargetObject =
-            InteractorBindings.Find(It.Key);
-
-        if (!FoundTargetObject || !(*FoundTargetObject))
-        {
-            continue;
-        }
-
-        const FSofaRuntimeObjectDescriptor* RuntimeObj = FindRuntimeObjectForInteractor(*SofaContext, It.Key);
-
-        if (!RuntimeObj)
-        {
-            UE_LOG(LogSofaService, Warning,
-                TEXT("No runtime object found for interactor '%s'"),
-                *It.Key.ToString());
-            continue;
-        }
-
-        ApplySingleInteractorTarget(*FoundTargetObject, *RuntimeObj, It.Value);
-    }
-}
-
-void FSofaSimulationService::ApplySingleInteractorTarget(
-    sofa::core::objectmodel::BaseObject* TargetObject,
-    const FSofaRuntimeObjectDescriptor& RuntimeObj,
-    const FTransform& UEPose)
-{
-    if (!TargetObject)
-    {
-        return;
-    }
-
-    auto* GoalMO =
-        dynamic_cast<sofa::component::statecontainer::MechanicalObject<sofa::defaulttype::Vec3Types>*>(TargetObject);
-
-    if (!GoalMO)
-    {
-        return;
-    }
-
-    ApplyTargetToGoalMechanicalObject(*GoalMO, RuntimeObj, UEPose);
-}
-
-void FSofaSimulationService::InitializeInteractorBindings()
-{
-    InteractorBindings.Empty();
-
-    if (!SofaContext || !SofaContext->RootNode)
-    {
-        UE_LOG(LogSofaService, Warning,
-            TEXT("InitializeInteractorBindings: invalid SOFA context or root node"));
-        return;
-    }
-
-    for (const FSofaRuntimeObjectDescriptor& RuntimeObj : SofaContext->RuntimeObjects)
-    {
-        if (RuntimeObj.ObjectId.IsEmpty() || RuntimeObj.SimulationNodeName.IsEmpty())
-        {
-            continue;
-        }
-
-        sofa::simulation::Node* ObjectNode =
-            SofaContext->RootNode->getChild(TCHAR_TO_UTF8(*RuntimeObj.SimulationNodeName));
-
-        if (!ObjectNode)
-        {
-            UE_LOG(LogSofaService, Warning,
-                TEXT("InitializeInteractorBindings: child node '%s' not found for object '%s'"),
-                *RuntimeObj.SimulationNodeName,
-                *RuntimeObj.ObjectId);
-            continue;
-        }
-
-        if (!RuntimeObj.InteractorForceFieldName.IsEmpty())
-        {
-            if (sofa::core::objectmodel::BaseObject* ForceObject =
-                ObjectNode->getObject(std::string(TCHAR_TO_UTF8(*RuntimeObj.InteractorForceFieldName))))
-            {
-                const FName BindingId(
-                    *FString::Printf(TEXT("%s.%s"),
-                        *RuntimeObj.ObjectId,
-                        *RuntimeObj.InteractorForceFieldName));
-
-                RegisterInteractorBinding(BindingId, ForceObject);
-
-                UE_LOG(LogSofaService, Log,
-                    TEXT("Registered binding '%s' -> %s"),
-                    *BindingId.ToString(),
-                    UTF8_TO_TCHAR(ForceObject->getName().c_str()));
-            }
-            else
-            {
-                UE_LOG(LogSofaService, Warning,
-                    TEXT("InitializeInteractorBindings: object '%s' not found in node '%s'"),
-                    *RuntimeObj.InteractorForceFieldName,
-                    *RuntimeObj.SimulationNodeName);
-            }
-        }
-
-        if (!RuntimeObj.MechanicalObjectName.IsEmpty())
-        {
-            if (sofa::core::objectmodel::BaseObject* MStateObject =
-                ObjectNode->getObject(std::string(TCHAR_TO_UTF8(*RuntimeObj.MechanicalObjectName))))
-            {
-                const FName BindingId(
-                    *FString::Printf(TEXT("%s.%s"),
-                        *RuntimeObj.ObjectId,
-                        *RuntimeObj.MechanicalObjectName));
-
-                RegisterInteractorBinding(BindingId, MStateObject);
-
-                UE_LOG(LogSofaService, Log,
-                    TEXT("Registered binding '%s' -> %s"),
-                    *BindingId.ToString(),
-                    UTF8_TO_TCHAR(MStateObject->getName().c_str()));
-            }
-            else
-            {
-                UE_LOG(LogSofaService, Warning,
-                    TEXT("InitializeInteractorBindings: object '%s' not found in node '%s'"),
-                    *RuntimeObj.MechanicalObjectName,
-                    *RuntimeObj.SimulationNodeName);
-            }
-        }
-    }
 }
 
 bool FSofaSimulationService::GetRuntimeObjectMaterialPath(FName ObjectId, FString& OutMaterialPath) const

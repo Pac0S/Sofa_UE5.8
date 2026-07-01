@@ -179,24 +179,6 @@ bool USofaSceneSubsystem::TryGetLatestSnapshot(FSofaFrameSnapshot& OutSnapshot) 
     return Service->TryGetLatestSnapshot(OutSnapshot);
 }
 
-bool USofaSceneSubsystem::SetInteractorTargetPose(FName TargetId, const FTransform& TargetPose)
-{
-    if (!Service)
-    {
-        return false;
-    }
-    return Service->SetInteractorTargetPose(TargetId, TargetPose);
-}
-
-bool USofaSceneSubsystem::ClearInteractorTargetPose(FName TargetId)
-{
-    if (!Service)
-    {
-        return false;
-    }
-    return Service->ClearInteractorTargetPose(TargetId);
-}
-
 bool USofaSceneSubsystem::GetObjectMaterialPath(FName ObjectId, FString& OutMaterialPath) const
 {
     if (!Service)

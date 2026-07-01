@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "SofaSceneConfig.h"
 #include "SofaSimulationService.h"
+#include "SofaSceneLoader.h"
 
 struct FSofaRuntimeScene;
 
@@ -18,5 +19,5 @@ public:
 public:
     static FBuildResult BuildPrototypeScene(
         FSofaRuntimeScene& SofaContext,
-        const FSofaSceneConfig& Config);
+        const FSofaPrototypeSceneRequest& Request);
 };

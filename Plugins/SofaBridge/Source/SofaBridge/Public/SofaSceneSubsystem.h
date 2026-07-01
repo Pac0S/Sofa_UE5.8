@@ -21,17 +21,30 @@ public:
     virtual void Tick(float DeltaTime);
     virtual TStatId GetStatId() const;
 
-    UFUNCTION(BlueprintCallable, Category="SOFA")
-    void StartPrototypeSimulation();
+    UFUNCTION(BlueprintCallable, Category = "SOFA|Simulation")
+    void ConfigurePrototypeScene(const FSofaPrototypeSceneRequest& Request);
 
-    UFUNCTION(BlueprintCallable, Category="SOFA")
+    UFUNCTION(BlueprintCallable, Category="SOFA|Simulation")
+    bool StartPrototypeSimulation();
+
+    UFUNCTION(BlueprintCallable, Category="SOFA|Simulation")
     void StopPrototypeSimulation();
 
-    UFUNCTION(BlueprintCallable, Category="SOFA")
+    UFUNCTION(BlueprintCallable, Category="SOFA|Simulation")
     void PauseSimulation();
 
-    UFUNCTION(BlueprintCallable, Category="SOFA")
+    UFUNCTION(BlueprintCallable, Category="SOFA|Simulation")
     void ResumeSimulation();
+
+    UFUNCTION(BlueprintCallable, Category = "SOFA|Simulation")
+    void ClearPrototypeSceneRequest();
+
+    UFUNCTION(BlueprintPure, Category = "SOFA|Simulation")
+    bool HasPrototypeSceneRequest() const;
+
+    UFUNCTION(BlueprintPure, Category = "SOFA|Simulation")
+    FSofaPrototypeSceneRequest GetPrototypeSceneRequest() const;
+
 
     UFUNCTION(BlueprintCallable, Category="SOFA")
     bool TryGetLatestSnapshot(FSofaFrameSnapshot& OutSnapshot) const;
@@ -47,4 +60,8 @@ public:
 
 private:
     TUniquePtr<FSofaSimulationService> Service;
+
+    bool bHasPrototypeSceneRequest = false;
+
+    FSofaPrototypeSceneRequest PendingPrototypeSceneRequest;
 };

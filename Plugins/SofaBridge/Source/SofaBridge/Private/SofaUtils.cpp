@@ -139,25 +139,25 @@ namespace SofaMaterialUtils
 
 namespace SofaCoordinateSystem
 {
-    FVector SofaToUnrealPosition(const FVector& InPosition, const FSofaDeformableObjectConfig& Config)
+    FVector SofaToUnrealPosition(
+        const FVector& InSofaPosition,
+        const FSofaRuntimeObjectDescriptor& RuntimeObj)
     {
-        // X = lateral / Y = vertical / Z = depth
-        // to Unreal : X forward, Y right, Z up
-        const FVector UEPos(
-            InPosition.X * Config.Scale + Config.Translation.X,
-            InPosition.Z * Config.Scale + Config.Translation.Y,
-            InPosition.Y * Config.Scale + Config.Translation.Z);
-
-        return UEPos;
+        const float SafeScale = FMath::IsNearlyZero(RuntimeObj.SofaScale) ? 1.0f : RuntimeObj.SofaScale;
+        const FVector SofaScaled(InSofaPosition.X * SafeScale, InSofaPosition.Y * SafeScale, InSofaPosition.Z * SafeScale);
+        const FVector UnrealLocalPosition(SofaScaled.X, SofaScaled.Z, SofaScaled.Y);
+        return RuntimeObj.UnrealObjectTransform.TransformPosition(UnrealLocalPosition);
     }
 
-    FVector UnrealToSofaPosition(const FVector& InPosition, const FSofaDeformableObjectConfig& Config)
+    FVector UnrealToSofaPosition(
+        const FVector& InUnrealPosition,
+        const FSofaRuntimeObjectDescriptor& RuntimeObj)
     {
-        const FVector SofaPos(
-            (InPosition.X - Config.Translation.X) / Config.Scale,
-            (InPosition.Z - Config.Translation.Y) / Config.Scale,
-            (InPosition.Y - Config.Translation.Z) / Config.Scale);
-        return SofaPos;
+        const float SafeScale = FMath::IsNearlyZero(RuntimeObj.SofaScale) ? 1.0f : RuntimeObj.SofaScale;
+        const FVector UnrealLocalPosition = RuntimeObj.UnrealObjectTransform.InverseTransformPosition(InUnrealPosition);
+        const FVector SofaScaled(UnrealLocalPosition.X, UnrealLocalPosition.Z, UnrealLocalPosition.Y);
+
+        return FVector(SofaScaled.X / SafeScale, SofaScaled.Y / SafeScale, SofaScaled.Z / SafeScale);
     }
 }
 
@@ -200,52 +200,81 @@ namespace SofaSceneExtractor
         UE_LOG(LogSofaSceneExtractor, Warning, TEXT("end of child list"));
     }
 
+    static sofa::simulation::Node* FindRuntimeObjectNode(
+        const FSofaRuntimeScene& Scene,
+        const FSofaRuntimeObjectDescriptor& RuntimeObj,
+        FString& OutError)
+    {
+        auto* Root = Scene.RootNode.get();
+        if (!Root)
+        {
+            OutError = TEXT("Root node is null");
+            return nullptr;
+        }
+
+        sofa::simulation::Node* ObjectNode = Root->getChild(TCHAR_TO_UTF8(*RuntimeObj.SimulationNodeName));
+        if (!ObjectNode)
+        {
+            OutError = FString::Printf(
+                TEXT("Missing SOFA child node '%s'"),
+                *RuntimeObj.SimulationNodeName);
+            return nullptr;
+        }
+
+        return ObjectNode;
+    }
+
     bool ExtractMechanicalDebugPoints(
         const FSofaRuntimeScene& Scene,
-        const FSofaDeformableObjectConfig& Config,
+        const FSofaRuntimeObjectDescriptor& RuntimeObj,
         TArray<FSofaDebugPoint>& OutPoints,
         FString& OutError)
     {
         OutPoints.Reset();
 
-        auto* Root = Scene.RootNode.get();
-        if (!Root)
-        {
-            OutError = TEXT("Root node is null");
-            UE_LOG(LogSofaSceneExtractor, Error, TEXT("%s"), *OutError);
-            return false;
-        }
-
-        //UE_LOG(LogSofaSceneExtractor, Warning, TEXT("Extract: root ok, looking for node '%s'"), *Config.Id);
-
-        auto* ObjectNode = Root->getChild(TCHAR_TO_UTF8(*Config.Id));
+        sofa::simulation::Node* ObjectNode = FindRuntimeObjectNode(Scene, RuntimeObj, OutError);
         if (!ObjectNode)
         {
-            OutError = FString::Printf(TEXT("Missing SOFA child node '%s'"), *Config.Id);
             UE_LOG(LogSofaSceneExtractor, Error, TEXT("%s"), *OutError);
             return false;
         }
 
-        sofa::core::objectmodel::BaseObject* Base = ObjectNode->getObject("mstate");
+        sofa::core::objectmodel::BaseObject* Base =
+            ObjectNode->getObject(TCHAR_TO_UTF8(*RuntimeObj.MechanicalObjectName));
+
         if (!Base)
         {
-            OutError = FString::Printf(TEXT("Missing object 'mstate' in node '%s'"), *Config.Id);
+            OutError = FString::Printf(
+                TEXT("Missing object '%s' in node '%s'"),
+                *RuntimeObj.MechanicalObjectName,
+                *RuntimeObj.SimulationNodeName);
             UE_LOG(LogSofaSceneExtractor, Error, TEXT("%s"), *OutError);
             return false;
         }
 
-        auto* MState = dynamic_cast<sofa::component::statecontainer::MechanicalObject<sofa::defaulttype::Vec3Types>*>(Base);
+        auto* MState =
+            dynamic_cast<sofa::component::statecontainer::MechanicalObject<sofa::defaulttype::Vec3Types>*>(Base);
 
+        if (!MState)
+        {
+            OutError = FString::Printf(
+                TEXT("Object '%s' in node '%s' is not a MechanicalObject<Vec3d>"),
+                *RuntimeObj.MechanicalObjectName,
+                *RuntimeObj.SimulationNodeName);
+            UE_LOG(LogSofaSceneExtractor, Error, TEXT("%s"), *OutError);
+            return false;
+        }
 
         const auto& Positions = MState->readPositions();
+        OutPoints.Reserve((int32)Positions.size());
 
         for (int32 i = 0; i < (int32)Positions.size(); ++i)
         {
             const auto& P = Positions[i];
 
             FSofaDebugPoint& Pt = OutPoints.AddDefaulted_GetRef();
-            FVector Pos(P[0], P[1], P[2]);
-            Pt.Position = SofaCoordinateSystem::SofaToUnrealPosition(Pos, Config);
+            FVector SofaPos(P[0], P[1], P[2]);
+            Pt.Position = SofaCoordinateSystem::SofaToUnrealPosition(SofaPos, RuntimeObj);
             Pt.Color = FColor::Green;
             Pt.Size = 8.0f;
         }
@@ -255,85 +284,53 @@ namespace SofaSceneExtractor
 
     bool ExtractMechanicalSurfaceDebugTriangles(
         const FSofaRuntimeScene& Scene,
-        const FSofaDeformableObjectConfig& Config,
+        const FSofaRuntimeObjectDescriptor& RuntimeObj,
         TArray<FSofaDebugTriangle>& OutTriangles,
         FString& OutError)
     {
         OutTriangles.Reset();
 
-        if (!Scene.RootNode)
-        {
-            OutError = TEXT("ExtractSurfaceTriangles: invalid root node");
-            return false;
-        }
-
-        sofa::simulation::Node* Root = Scene.RootNode.get();
-        if (!Root)
-        {
-            OutError = TEXT("ExtractSurfaceTriangles: root node is null");
-            return false;
-        }
-
-        const std::string ObjectId = TCHAR_TO_UTF8(*Config.Id);
-        sofa::simulation::Node* ObjectNode = Root->getChild(ObjectId);
-
-        /*UE_LOG(LogSofaSceneExtractor, Warning, TEXT("ExtractSurfaceTriangles: looking for object '%s' => %p"),
-            *Config.Id, ObjectNode);*/
-
+        sofa::simulation::Node* ObjectNode = FindRuntimeObjectNode(Scene, RuntimeObj, OutError);
         if (!ObjectNode)
         {
-            OutError = FString::Printf(TEXT("ExtractSurfaceTriangles: object node '%s' not found"), *Config.Id);
             return false;
         }
 
-        sofa::simulation::Node* SurfaceNode = ObjectNode->getChild("Surface");
-
-        /*UE_LOG(LogSofaSceneExtractor, Warning, TEXT("ExtractSurfaceTriangles: Surface node => %p"),
-            SurfaceNode);*/
+        sofa::simulation::Node* SurfaceNode =
+            ObjectNode->getChild(TCHAR_TO_UTF8(*RuntimeObj.SurfaceNodeName));
 
         if (!SurfaceNode)
         {
-            OutError = FString::Printf(TEXT("ExtractSurfaceTriangles: Surface child not found under '%s'"), *Config.Id);
+            OutError = FString::Printf(
+                TEXT("Surface child '%s' not found under '%s'"),
+                *RuntimeObj.SurfaceNodeName,
+                *RuntimeObj.SimulationNodeName);
             return false;
         }
 
-        auto* SurfaceTopo = SurfaceNode->getObject("surfaceTopo");
-
-        /*UE_LOG(LogSofaSceneExtractor, Warning, TEXT("ExtractSurfaceTriangles: surfaceTopo => %p"),
-            SurfaceTopo);*/
+        sofa::core::objectmodel::BaseObject* SurfaceTopo =
+            SurfaceNode->getObject(TCHAR_TO_UTF8(*RuntimeObj.SurfaceTopologyName));
 
         if (!SurfaceTopo)
         {
-            OutError = TEXT("ExtractSurfaceTriangles: surfaceTopo not found");
-            return false;
-        }
-
-        auto* TrianglesData = SurfaceTopo->findData("triangles");
-
-        /*UE_LOG(LogSofaSceneExtractor, Warning, TEXT("ExtractSurfaceTriangles: triangles data => %p"),
-            TrianglesData);*/
-
-        if (!TrianglesData)
-        {
-            OutError = TEXT("ExtractSurfaceTriangles: triangles data not found on surfaceTopo");
+            OutError = FString::Printf(
+                TEXT("Surface topology '%s' not found under '%s/%s'"),
+                *RuntimeObj.SurfaceTopologyName,
+                *RuntimeObj.SimulationNodeName,
+                *RuntimeObj.SurfaceNodeName);
             return false;
         }
 
         auto* MeshTopology = dynamic_cast<sofa::core::topology::BaseMeshTopology*>(SurfaceTopo);
-        /*UE_LOG(LogSofaSceneExtractor, Warning, TEXT("ExtractSurfaceTriangles: BaseMeshTopology cast => %p"),
-            MeshTopology);*/
-
         if (!MeshTopology)
         {
-            OutError = TEXT("ExtractSurfaceTriangles: surfaceTopo is not a BaseMeshTopology");
+            OutError = FString::Printf(
+                TEXT("Object '%s' is not a BaseMeshTopology"),
+                *RuntimeObj.SurfaceTopologyName);
             return false;
         }
 
         const sofa::Size TriangleCount = MeshTopology->getNbTriangles();
-
-        /*UE_LOG(LogSofaSceneExtractor, Warning, TEXT("ExtractSurfaceTriangles: triangle count = %d"),
-            (int32)TriangleCount);*/
-
         OutTriangles.Reserve((int32)TriangleCount);
 
         for (sofa::Size i = 0; i < TriangleCount; ++i)
@@ -348,19 +345,12 @@ namespace SofaSceneExtractor
             OutTriangles.Add(Tri);
         }
 
-        if (OutTriangles.Num() > 0)
-        {
-            const FSofaDebugTriangle& T0 = OutTriangles[0];
-            /*UE_LOG(LogSofaSceneExtractor, Warning,
-                TEXT("ExtractSurfaceTriangles: first triangle = (%d, %d, %d)"),
-                T0.A, T0.B, T0.C);*/
-        }
         return true;
     }
 
     bool ExtractVisualSurfaceMesh(
         const FSofaRuntimeScene& Scene,
-        const FSofaDeformableObjectConfig& Config,
+        const FSofaRuntimeObjectDescriptor& RuntimeObj,
         FSofaSurfaceMeshState& OutMesh,
         FString& OutError)
     {
@@ -370,68 +360,73 @@ namespace SofaSceneExtractor
         OutMesh.Normals.Reset();
         OutMesh.UV0.Reset();
 
-        auto* Root = Scene.RootNode.get();
-        if (!Root)
-        {
-            OutError = TEXT("ExtractVisualSurfaceMesh: root node is null");
-            return false;
-        }
-
-        auto* ObjectNode = Root->getChild(TCHAR_TO_UTF8(*Config.Id));
+        sofa::simulation::Node* ObjectNode = FindRuntimeObjectNode(Scene, RuntimeObj, OutError);
         if (!ObjectNode)
         {
-            OutError = FString::Printf(
-                TEXT("ExtractVisualSurfaceMesh: object node '%s' not found"),
-                *Config.Id);
-            return false;
-        }
-        sofa::simulation::Node* VisualNode = ObjectNode->getChild("Visual");
-        if (!VisualNode)
-        {
-            VisualNode = ObjectNode->getChild("SurfaceVisual");
-        }
-        if (!VisualNode)
-        {
-            OutError = FString::Printf(
-                TEXT("ExtractVisualSurfaceMesh: no visual child node found under '%s'"),
-                *Config.Id);
             return false;
         }
 
-        sofa::core::objectmodel::BaseObject* BaseMState = VisualNode->getObject("visualDofs");
+        sofa::simulation::Node* VisualNode =
+            ObjectNode->getChild(TCHAR_TO_UTF8(*RuntimeObj.VisualNodeName));
+
+        if (!VisualNode)
+        {
+            OutError = FString::Printf(
+                TEXT("Visual child node '%s' not found under '%s'"),
+                *RuntimeObj.VisualNodeName,
+                *RuntimeObj.SimulationNodeName);
+            return false;
+        }
+
+        sofa::core::objectmodel::BaseObject* BaseMState =
+            VisualNode->getObject(TCHAR_TO_UTF8(*RuntimeObj.VisualMechanicalObjectName));
+
         if (!BaseMState)
         {
             BaseMState = VisualNode->getObject("mstate");
         }
+
         if (!BaseMState)
         {
-            OutError = TEXT("ExtractVisualSurfaceMesh: missing 'visualDofs' or 'mstate' in visual node");
+            OutError = FString::Printf(
+                TEXT("Missing visual MechanicalObject '%s' or fallback 'mstate' in node '%s/%s'"),
+                *RuntimeObj.VisualMechanicalObjectName,
+                *RuntimeObj.SimulationNodeName,
+                *RuntimeObj.VisualNodeName);
             return false;
         }
 
         auto* MState =
             dynamic_cast<sofa::component::statecontainer::MechanicalObject<sofa::defaulttype::Vec3Types>*>(BaseMState);
+
         if (!MState)
         {
-            OutError = TEXT("ExtractVisualSurfaceMesh: failed to cast visual MechanicalObject<Vec3d>");
+            OutError = TEXT("Failed to cast visual MechanicalObject<Vec3d>");
             return false;
         }
 
-        sofa::core::objectmodel::BaseObject* TopoObj = VisualNode->getObject("visualTopo");
+        sofa::core::objectmodel::BaseObject* TopoObj =
+            VisualNode->getObject(TCHAR_TO_UTF8(*RuntimeObj.VisualTopologyName));
+
         if (!TopoObj)
         {
             TopoObj = VisualNode->getObject("topo");
         }
+
         if (!TopoObj)
         {
-            OutError = TEXT("ExtractVisualSurfaceMesh: missing 'visualTopo' or 'topo' in visual node");
+            OutError = FString::Printf(
+                TEXT("Missing visual topology '%s' or fallback 'topo' in node '%s/%s'"),
+                *RuntimeObj.VisualTopologyName,
+                *RuntimeObj.SimulationNodeName,
+                *RuntimeObj.VisualNodeName);
             return false;
         }
 
         auto* MeshTopology = dynamic_cast<sofa::core::topology::BaseMeshTopology*>(TopoObj);
         if (!MeshTopology)
         {
-            OutError = TEXT("ExtractVisualSurfaceMesh: topology cast to BaseMeshTopology failed");
+            OutError = TEXT("Visual topology cast to BaseMeshTopology failed");
             return false;
         }
 
@@ -441,7 +436,7 @@ namespace SofaSceneExtractor
         for (int32 i = 0; i < (int32)Positions.size(); ++i)
         {
             FVector SofaPos(Positions[i][0], Positions[i][1], Positions[i][2]);
-            OutMesh.Vertices.Add(SofaCoordinateSystem::SofaToUnrealPosition(SofaPos, Config));
+            OutMesh.Vertices.Add(SofaCoordinateSystem::SofaToUnrealPosition(SofaPos, RuntimeObj));
         }
 
         const sofa::Size TriangleCount = MeshTopology->getNbTriangles();
@@ -457,13 +452,13 @@ namespace SofaSceneExtractor
 
         if (OutMesh.Vertices.Num() == 0)
         {
-            OutError = TEXT("ExtractVisualSurfaceMesh: no vertices extracted");
+            OutError = TEXT("No vertices extracted from visual mesh");
             return false;
         }
 
         if (OutMesh.Triangles.Num() == 0)
         {
-            OutError = TEXT("ExtractVisualSurfaceMesh: no triangles extracted");
+            OutError = TEXT("No triangles extracted from visual mesh");
             return false;
         }
 
@@ -473,7 +468,7 @@ namespace SofaSceneExtractor
 
     bool ExtractRenderableSurfaceMesh(
         const FSofaRuntimeScene& Scene,
-        const FSofaDeformableObjectConfig& Config,
+        const FSofaRuntimeObjectDescriptor& RuntimeObj,
         FSofaObjectState& OutState,
         FString& OutError)
     {
@@ -482,31 +477,30 @@ namespace SofaSceneExtractor
         OutState.SurfaceMesh.Triangles.Reset();
         OutState.SurfaceMesh.Normals.Reset();
         OutState.SurfaceMesh.UV0.Reset();
+        OutState.DebugPoints.Reset();
+        OutState.SurfaceTriangles.Reset();
 
         FString VisualError;
         FString FallbackError;
 
-        //Extract visual debug points and triangles first. They will be used as a fallback if visual extraction fails.
-        if (!ExtractMechanicalDebugPoints(Scene, Config, OutState.DebugPoints, FallbackError))
+        if (!ExtractMechanicalDebugPoints(Scene, RuntimeObj, OutState.DebugPoints, FallbackError))
         {
             OutError = FString::Printf(
-                TEXT("ExtractRenderableSurfaceMesh: visual extraction failed (%s), fallback vertices failed (%s)"),
-                *VisualError,
+                TEXT("Mechanical debug point extraction failed: %s"),
                 *FallbackError);
             return false;
         }
 
-        if (!ExtractMechanicalSurfaceDebugTriangles(Scene, Config, OutState.SurfaceTriangles, FallbackError))
+        if (!ExtractMechanicalSurfaceDebugTriangles(Scene, RuntimeObj, OutState.SurfaceTriangles, FallbackError))
         {
             OutError = FString::Printf(
-                TEXT("ExtractRenderableSurfaceMesh: visual extraction failed (%s), fallback triangles failed (%s)"),
-                *VisualError,
+                TEXT("Mechanical surface triangle extraction failed: %s"),
                 *FallbackError);
             return false;
         }
 
-        // Attempt to extract the visual surface mesh first. If it fails, we will use the debug points and triangles as a fallback.
-        if (Config.VisualConfig.bUseVisualMesh && ExtractVisualSurfaceMesh(Scene, Config, OutState.SurfaceMesh, VisualError))
+        if (RuntimeObj.bPreferVisualSurface &&
+            ExtractVisualSurfaceMesh(Scene, RuntimeObj, OutState.SurfaceMesh, VisualError))
         {
             OutState.SurfaceMesh.Source = ESofaSurfaceSource::VisualSurface;
             return true;
@@ -515,7 +509,7 @@ namespace SofaSceneExtractor
         if (OutState.DebugPoints.Num() == 0)
         {
             OutError = FString::Printf(
-                TEXT("ExtractRenderableSurfaceMesh: fallback produced no vertices (visual error: %s)"),
+                TEXT("Fallback produced no vertices (visual error: %s)"),
                 *VisualError);
             return false;
         }
@@ -523,7 +517,7 @@ namespace SofaSceneExtractor
         if (OutState.SurfaceTriangles.Num() == 0)
         {
             OutError = FString::Printf(
-                TEXT("ExtractRenderableSurfaceMesh: fallback produced no triangles (visual error: %s)"),
+                TEXT("Fallback produced no triangles (visual error: %s)"),
                 *VisualError);
             return false;
         }

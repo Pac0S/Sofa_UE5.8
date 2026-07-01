@@ -34,10 +34,6 @@ public:
 
     ESofaSimState GetState() const { return State; }
 
-    bool RegisterInteractorBinding(FName TargetId, sofa::core::objectmodel::BaseObject* TargetObject);
-    bool SetInteractorTargetPose(FName TargetId, const FTransform& TargetPose);
-    bool ClearInteractorTargetPose(FName TargetId);
-
     bool GetRuntimeObjectMaterialPath(FName ObjectId, FString& OutMaterialPath) const;
 
     FSofaSceneConfig GetActiveSceneConfig() const { return ActiveSceneConfig; }
@@ -50,11 +46,6 @@ private:
     void PublishSnapshot(const FSofaFrameSnapshot& Snapshot);
     void ProcessPendingCommands();
     void HandleCommand(const FSofaCommand& Command);
-
-    void ApplyInteractorTargetsToSimulation();
-    void ApplySingleInteractorTarget(sofa::core::objectmodel::BaseObject* TargetObject, const FSofaRuntimeObjectDescriptor& RuntimeObj, const FTransform& UEPose);
-
-    void InitializeInteractorBindings();
 
 private:
     TUniquePtr<FSofaRuntimeScene> SofaContext;
@@ -75,8 +66,6 @@ private:
 
     FCriticalSection InteractorTargetsMutex;
     TMap<FName, FTransform> PendingInteractorTargetPoses;
-
-    TMap<FName, sofa::core::objectmodel::BaseObject*> InteractorBindings;
 
     bool LoggedChildNodes = false;
 };

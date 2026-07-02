@@ -1,6 +1,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "SofaRuntimeEnums.h"
+
 #include "SofaSceneIntegrationOverrides.generated.h"
 
 USTRUCT()
@@ -25,6 +27,9 @@ struct FSofaObjectIntegrationOverride
 
     UPROPERTY()
     bool bPreferVisualSurface = true;
+
+    UPROPERTY()
+    ESofaRuntimeObjectRole Role = ESofaRuntimeObjectRole::Unknown;
 };
 
 USTRUCT()

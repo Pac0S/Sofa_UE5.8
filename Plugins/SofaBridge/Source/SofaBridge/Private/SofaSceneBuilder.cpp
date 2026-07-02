@@ -2,6 +2,7 @@
 #include "SofaSimulationService.h"
 #include "Logging/LogMacros.h"
 #include "Misc/Paths.h"
+#include "SofaRuntimeTypes.h"
 
 #include "SofaIncludes.h"
 #include "SofaRuntimeScene.h"
@@ -232,6 +233,204 @@ namespace
         }
         return nullptr;
     }
+
+    static FString FindFirstComponentNameByType(
+        const FSofaNodeDefinition& NodeDef,
+        const FString& ComponentType)
+    {
+        for (const FSofaComponentDefinition& CompDef : NodeDef.Components)
+        {
+            if (CompDef.Type == ComponentType)
+            {
+                return CompDef.Name;
+            }
+        }
+        return FString();
+    }
+
+    static FString FindFirstTopologyContainerName(
+        const FSofaNodeDefinition& NodeDef)
+    {
+        static const TArray<FString> TopologyTypes =
+        {
+            TEXT("TetrahedronSetTopologyContainer"),
+            TEXT("HexahedronSetTopologyContainer"),
+            TEXT("TriangleSetTopologyContainer"),
+            TEXT("QuadSetTopologyContainer"),
+            TEXT("EdgeSetTopologyContainer")
+        };
+
+        for (const FString& TypeName : TopologyTypes)
+        {
+            const FString Found = FindFirstComponentNameByType(NodeDef, TypeName);
+            if (!Found.IsEmpty())
+            {
+                return Found;
+            }
+        }
+
+        return FString();
+    }
+
+    static const FSofaNodeDefinition* FindChildNodeByName(
+        const FSofaNodeDefinition& NodeDef,
+        const FString& ChildName)
+    {
+        for (const FSofaNodeDefinition& Child : NodeDef.Children)
+        {
+            if (Child.Name == ChildName)
+            {
+                return &Child;
+            }
+        }
+        return nullptr;
+    }
+
+    static bool IsTechnicalRepresentationNode(const FSofaNodeDefinition& NodeDef)
+    {
+        return NodeDef.Name == TEXT("Visual") ||
+            NodeDef.Name == TEXT("Surface") ||
+            NodeDef.Name == TEXT("Collision");
+    }
+
+    static bool IsRuntimeObjectNode(const FSofaNodeDefinition& NodeDef)
+    {
+        if (IsTechnicalRepresentationNode(NodeDef))
+        {
+            return false;
+        }
+        return
+            !FindFirstComponentNameByType(NodeDef, TEXT("MechanicalObject")).IsEmpty() ||
+            !FindFirstTopologyContainerName(NodeDef).IsEmpty() ||
+            FindChildNodeByName(NodeDef, TEXT("Surface")) != nullptr ||
+            FindChildNodeByName(NodeDef, TEXT("Visual")) != nullptr;
+    }
+
+    static ESofaRuntimeObjectRole InferRuntimeObjectRole(
+        const FSofaNodeDefinition& NodeDef)
+    {
+        const FString LowerName = NodeDef.Name.ToLower();
+
+        const bool bHasMechanical =
+            !FindFirstComponentNameByType(NodeDef, TEXT("MechanicalObject")).IsEmpty();
+
+        const bool bHasVolumeTopology =
+            !FindFirstComponentNameByType(NodeDef, TEXT("TetrahedronSetTopologyContainer")).IsEmpty() ||
+            !FindFirstComponentNameByType(NodeDef, TEXT("HexahedronSetTopologyContainer")).IsEmpty();
+
+        const bool bHasSurfaceChild =
+            FindChildNodeByName(NodeDef, TEXT("Surface")) != nullptr ||
+            FindChildNodeByName(NodeDef, TEXT("Collision")) != nullptr;
+
+        const bool bHasVisualChild =
+            FindChildNodeByName(NodeDef, TEXT("Visual")) != nullptr;
+
+        if (LowerName.Contains(TEXT("tool")) ||
+            LowerName.Contains(TEXT("instrument")) ||
+            LowerName.Contains(TEXT("scalpel")) ||
+            LowerName.Contains(TEXT("needle")) ||
+            LowerName.Contains(TEXT("grasper")) ||
+            LowerName.Contains(TEXT("forceps")))
+        {
+            return ESofaRuntimeObjectRole::Tool;
+        }
+
+        if (!bHasMechanical && bHasSurfaceChild && !bHasVisualChild)
+        {
+            return ESofaRuntimeObjectRole::CollisionProxy;
+        }
+
+        if (bHasMechanical && bHasVolumeTopology)
+        {
+            if (LowerName.Contains(TEXT("skin")) ||
+                LowerName.Contains(TEXT("layer")) ||
+                LowerName.Contains(TEXT("fat")) ||
+                LowerName.Contains(TEXT("fascia")))
+            {
+                return ESofaRuntimeObjectRole::DeformableLayer;
+            }
+
+            return ESofaRuntimeObjectRole::Organ;
+        }
+
+        if (!bHasMechanical)
+        {
+            return ESofaRuntimeObjectRole::StaticSupport;
+        }
+
+        return ESofaRuntimeObjectRole::Unknown;
+    }
+
+    static FSofaRuntimeObjectDescriptor MakeRuntimeObjectDescriptor(
+        const FSofaNodeDefinition& NodeDef,
+        const FSofaSceneIntegrationOverrides& IntegrationOverrides)
+    {
+        FSofaRuntimeObjectDescriptor RuntimeObject;
+
+        RuntimeObject.ObjectId = NodeDef.Name;
+        RuntimeObject.SimulationNodeName = NodeDef.Name;
+
+        RuntimeObject.MechanicalObjectName =
+            FindFirstComponentNameByType(NodeDef, TEXT("MechanicalObject"));
+
+        RuntimeObject.TopologyContainerName =
+            FindFirstTopologyContainerName(NodeDef);
+
+        if (const FSofaNodeDefinition* SurfaceNode = FindChildNodeByName(NodeDef, TEXT("Surface")))
+        {
+            RuntimeObject.SurfaceNodeName = SurfaceNode->Name;
+            RuntimeObject.SurfaceTopologyName = FindFirstTopologyContainerName(*SurfaceNode);
+        }
+
+        if (const FSofaNodeDefinition* VisualNode = FindChildNodeByName(NodeDef, TEXT("Visual")))
+        {
+            RuntimeObject.VisualNodeName = VisualNode->Name;
+            RuntimeObject.VisualMechanicalObjectName =
+                FindFirstComponentNameByType(*VisualNode, TEXT("MechanicalObject"));
+            RuntimeObject.VisualTopologyName =
+                FindFirstTopologyContainerName(*VisualNode);
+        }
+
+        if (const FSofaObjectIntegrationOverride* Override =
+            FindObjectOverride(IntegrationOverrides, RuntimeObject.ObjectId))
+        {
+            RuntimeObject.VisualMaterialPath = Override->VisualMaterialPath;
+            RuntimeObject.SofaScale = Override->SofaScale;
+            RuntimeObject.UnrealObjectTransform =
+                FTransform(Override->UnrealRotation, Override->UnrealTranslation, FVector::OneVector);
+            RuntimeObject.bPreferVisualSurface = Override->bPreferVisualSurface;
+            RuntimeObject.Role = Override->Role;
+        }
+        else
+        {
+            RuntimeObject.VisualMaterialPath.Reset();
+            RuntimeObject.SofaScale = 10.0f;
+            RuntimeObject.UnrealObjectTransform = FTransform::Identity;
+            RuntimeObject.bPreferVisualSurface = true;
+        }
+
+        return RuntimeObject;
+    }
+
+    static void CollectRuntimeObjectsFromNodeRecursive(
+        const FSofaNodeDefinition& NodeDef,
+        const FSofaSceneIntegrationOverrides& IntegrationOverrides,
+        TArray<FSofaRuntimeObjectDescriptor>& OutRuntimeObjects)
+    {
+        if (IsRuntimeObjectNode(NodeDef))
+        {
+            OutRuntimeObjects.Add(
+                MakeRuntimeObjectDescriptor(NodeDef, IntegrationOverrides));
+        }
+
+        for (const FSofaNodeDefinition& ChildNode : NodeDef.Children)
+        {
+            CollectRuntimeObjectsFromNodeRecursive(
+                ChildNode,
+                IntegrationOverrides,
+                OutRuntimeObjects);
+        }
+    }
 #endif
 }
 
@@ -429,37 +628,7 @@ FSofaSceneBuilder::FBuildResult FSofaSceneBuilder::BuildPrototypeScene(
     SofaContext.SimulationPtr = Simu;
 
     SofaContext.RuntimeObjects.Reset();
-    FSofaRuntimeObjectDescriptor RuntimeObject;
-    RuntimeObject.ObjectId = SceneDef.RootNode.Name;
-    RuntimeObject.SimulationNodeName = SceneDef.RootNode.Name;
-
-    RuntimeObject.MechanicalObjectName = TEXT("mstate");
-    RuntimeObject.TopologyContainerName = TEXT("topo");
-    RuntimeObject.InteractorForceFieldName = TEXT("Liver01.mstate");
-
-    RuntimeObject.SurfaceNodeName = TEXT("Surface");
-    RuntimeObject.SurfaceTopologyName = TEXT("surfaceTopo");
-
-    RuntimeObject.VisualNodeName = TEXT("Visual");
-    RuntimeObject.VisualMechanicalObjectName = TEXT("visualDofs");
-    RuntimeObject.VisualTopologyName = TEXT("visualTopo");
-
-    if (const FSofaObjectIntegrationOverride* Override = FindObjectOverride(IntegrationOverrides, RuntimeObject.ObjectId))
-    {
-        RuntimeObject.VisualMaterialPath = Override->VisualMaterialPath;
-        RuntimeObject.SofaScale = Override->SofaScale;
-        RuntimeObject.UnrealObjectTransform = FTransform(Override->UnrealRotation, Override->UnrealTranslation, FVector::OneVector);
-        RuntimeObject.bPreferVisualSurface = Override->bPreferVisualSurface;
-    }
-    else
-    {
-        RuntimeObject.VisualMaterialPath.Reset();
-        RuntimeObject.SofaScale = 10.0f;
-        RuntimeObject.UnrealObjectTransform = FTransform::Identity;
-        RuntimeObject.bPreferVisualSurface = true;
-    }
-
-    SofaContext.RuntimeObjects.Add(RuntimeObject);
+    CollectRuntimeObjectsFromNodeRecursive(SceneDef.RootNode, IntegrationOverrides, SofaContext.RuntimeObjects);
     SofaContext.RootNode = Root;
     SofaContext.LoadedScenePath = SceneDef.SourceFilePath;
     SofaContext.SceneName = SceneDef.RootNode.Name;

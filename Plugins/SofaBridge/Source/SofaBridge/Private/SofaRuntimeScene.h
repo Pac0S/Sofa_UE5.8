@@ -1,29 +1,7 @@
 #pragma once
 
 #include "SofaIncludes.h"
-
-struct FSofaRuntimeObjectDescriptor
-{
-    FString ObjectId;
-    FString SimulationNodeName;
-
-    FString MechanicalObjectName = TEXT("mstate");
-    FString TopologyContainerName = TEXT("topo");
-    FString InteractorForceFieldName = TEXT("InteractorForce");
-
-    FString SurfaceNodeName = TEXT("Surface");
-    FString SurfaceTopologyName = TEXT("surfaceTopo");
-
-    FString VisualNodeName = TEXT("Visual");
-    FString VisualMechanicalObjectName = TEXT("visualDofs");
-    FString VisualTopologyName = TEXT("visualTopo");
-    FString VisualMaterialPath;
-
-    bool bPreferVisualSurface = true;
-
-    FTransform UnrealObjectTransform = FTransform::Identity;
-    float SofaScale = 10.0f;
-};
+#include "SofaRuntimeTypes.h"
 
 struct FSofaRuntimeScene
 {

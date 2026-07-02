@@ -744,5 +744,15 @@ bool USofaSceneLoader::LoadOverridesFromJsonFile(
         return false;
     }
 
+    for (const FSofaObjectIntegrationOverride& ObjOverride : OutOverrides.Objects)
+    {
+        if (ObjOverride.ObjectId.IsEmpty())
+        {
+            OutError = FString::Printf(
+                TEXT("Invalid override in '%s': objectId is empty"),
+                *JsonFilePath);
+            return false;
+        }
+    }
     return true;
 }

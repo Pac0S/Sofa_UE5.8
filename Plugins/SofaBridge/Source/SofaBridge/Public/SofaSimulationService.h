@@ -3,8 +3,8 @@
 #include "CoreMinimal.h"
 #include "HAL/CriticalSection.h"
 #include "Containers/Queue.h"
-#include "SofaSceneTypes.h"
-#include "SofaSceneConfig.h"
+#include "SofaRuntimeTypes.h"
+#include "SofaCommandTypes.h"
 
 class FSofaSimWorker;
 class FSofaSceneBuilder;
@@ -36,8 +36,6 @@ public:
 
     bool GetRuntimeObjectMaterialPath(FName ObjectId, FString& OutMaterialPath) const;
 
-    FSofaSceneConfig GetActiveSceneConfig() const { return ActiveSceneConfig; }
-
 private:
     friend class FSofaSimWorker;
     friend class FSofaSceneBuilder;
@@ -61,8 +59,6 @@ private:
     ESofaSimState State = ESofaSimState::Stopped;
     uint64 FrameCounter = 0;
     double SimTime = 0.0;
-
-    FSofaSceneConfig ActiveSceneConfig;
 
     FCriticalSection InteractorTargetsMutex;
     TMap<FName, FTransform> PendingInteractorTargetPoses;

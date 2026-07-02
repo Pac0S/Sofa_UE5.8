@@ -4,6 +4,7 @@
 #include "SofaSimulationWorker.h"
 #include "SofaSceneBuilder.h"
 #include "SofaRuntimeScene.h"
+#include "SofaRuntimeTypes.h"
 #include "SofaUtils.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogSofaService, Log, All);

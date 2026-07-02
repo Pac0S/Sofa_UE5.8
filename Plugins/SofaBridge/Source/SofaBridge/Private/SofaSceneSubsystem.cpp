@@ -2,6 +2,8 @@
 #include "Engine/World.h"
 #include "DrawDebugHelpers.h"
 
+#include "SofaCommandTypes.h"
+
 USofaSceneSubsystem::~USofaSceneSubsystem() = default;
 
 bool USofaSceneSubsystem::ShouldCreateSubsystem(UObject* Outer) const

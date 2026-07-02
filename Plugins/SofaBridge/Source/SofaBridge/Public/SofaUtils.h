@@ -1,8 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "SofaSceneTypes.h"
-#include "SofaSceneConfig.h"
+#include "SofaRuntimeTypes.h"
 
 struct FSofaRuntimeScene;
 struct FSofaRuntimeObjectDescriptor;

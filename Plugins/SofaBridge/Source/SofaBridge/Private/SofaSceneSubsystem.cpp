@@ -190,3 +190,13 @@ bool USofaSceneSubsystem::GetObjectMaterialPath(FName ObjectId, FString& OutMate
     }
     return Service->GetRuntimeObjectMaterialPath(ObjectId, OutMaterialPath);
 }
+
+bool USofaSceneSubsystem::SubmitToolInput(const FSofaToolInputState& Input)
+{
+    if (!Service)
+    {
+        return false;
+    }
+
+    return Service->SubmitToolInput(Input);
+}

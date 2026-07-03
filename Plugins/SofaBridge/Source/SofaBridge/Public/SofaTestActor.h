@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "SofaProceduralSurfaceComponent.h"
 #include "SofaSceneSubsystem.h"
+#include "SofaToolProxyActor.h"
 #include "SofaTestActor.generated.h"
 
 UCLASS()
@@ -61,10 +62,20 @@ public:
     UFUNCTION(BlueprintCallable, Category="Sofa")
     bool GetObjectMaterialPath(FName ObjectId, FString& OutMaterialPath) const;
 
+    UPROPERTY(EditAnywhere, Category = "SOFA|Tool")
+    TSubclassOf<ASofaToolProxyActor> ToolProxyActorClass;
+
+    UPROPERTY()
+    TObjectPtr<ASofaToolProxyActor> SpawnedToolProxy = nullptr;
+
+    UPROPERTY(EditAnywhere, Category = "SOFA|Tool")
+    FName DefaultToolId = TEXT("PrimaryTool");
+
 private:
     void DrawSofaDebug(const FSofaObjectState& ObjState);
     void DrawDebugPointsActorSpace(const FSofaObjectState& ObjState);
     void DrawDebugSurfaceActorSpace(const FSofaObjectState& ObjState);
+    void SpawnToolProxyIfNeeded();
 
 protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SOFA")

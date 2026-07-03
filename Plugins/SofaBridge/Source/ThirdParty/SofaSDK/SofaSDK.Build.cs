@@ -84,7 +84,8 @@ public class SofaSDK : ModuleRules
             "Sofa.Component.Mapping.Linear",
             "Sofa.LinearAlgebra",
             "Sofa.Geometry",
-            "Sofa.GL.Component.Rendering3D",
+            "Sofa.Component.Collision.Geometry",
+            "Sofa.Component.Constraint.Lagrangian.Correction",
             "tinyxml2"
         };
 

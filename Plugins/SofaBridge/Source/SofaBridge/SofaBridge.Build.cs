@@ -31,7 +31,8 @@ public class SofaBridge : ModuleRules
             "SlateCore",
             "XmlParser",
             "Json",
-            "JsonUtilities"
+            "JsonUtilities",
+            "InputCore"
         });
     }
 }

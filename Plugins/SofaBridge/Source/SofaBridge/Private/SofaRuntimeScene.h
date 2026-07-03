@@ -10,4 +10,5 @@ struct FSofaRuntimeScene
     FString LoadedScenePath;
     FString SceneName;
     TArray<FSofaRuntimeObjectDescriptor> RuntimeObjects;
+    TArray<FSofaRuntimeToolDescriptor> RuntimeTools;
 };

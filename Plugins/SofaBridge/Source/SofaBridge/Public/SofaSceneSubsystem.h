@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "SofaSceneTypes.h"
+#include "SofaCommandTypes.h"
 #include "SofaSimulationService.h"
 #include "SofaSceneSubsystem.generated.h"
 
@@ -51,6 +52,12 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "SOFA")
     bool GetObjectMaterialPath(FName ObjectId, FString& OutMaterialPath) const;
+
+    UFUNCTION(BlueprintCallable, Category = "SOFA")
+    bool SubmitToolInput(const FSofaToolInputState& Input);
+
+    /*UFUNCTION(BlueprintCallable, Category = "SOFA")
+    bool SubmitFrameInput(const FSofaFrameInput& Input);*/
 
 private:
     TUniquePtr<FSofaSimulationService> Service;

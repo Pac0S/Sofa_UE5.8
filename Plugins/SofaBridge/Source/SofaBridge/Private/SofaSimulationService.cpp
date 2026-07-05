@@ -9,34 +9,6 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogSofaService, Log, All);
 
-#if SOFA_SDK_ENABLED
-using FSofaGoalMechanicalObject = sofa::component::statecontainer::MechanicalObject<sofa::defaulttype::Vec3Types>;
-#endif
-
-struct FSofaToolBinding
-{
-    FName ToolId = NAME_None;
-    FSofaRuntimeToolDescriptor Descriptor;
-
-#if SOFA_SDK_ENABLED
-    FSofaGoalMechanicalObject* GoalMechanicalObject = nullptr;
-#endif
-
-    bool IsValid() const
-    {
-#if SOFA_SDK_ENABLED
-        return ToolId != NAME_None && GoalMechanicalObject != nullptr;
-#else
-        return false;
-#endif
-    }
-};
-
-struct FSofaToolBindingsStorage
-{
-    TMap<FName, FSofaToolBinding> Bindings;
-};
-
 namespace
 {
 #if SOFA_SDK_ENABLED
@@ -53,81 +25,317 @@ namespace
         return Parent->getChild(ChildName);
     }
 
-    static bool ApplyTargetToGoalMechanicalObject(
-        sofa::component::statecontainer::MechanicalObject<sofa::defaulttype::Vec3Types>& GoalMO,
+    static const FSofaResolvedBinding* FindBinding(
+        const FSofaRuntimeScene& Scene,
+        FName OwnerId,
+        ESofaBindingUsage Usage)
+    {
+        for (const FSofaResolvedBinding& Binding : Scene.Bindings)
+        {
+            if (Binding.Generation != Scene.SceneGeneration)
+            {
+                continue;
+            }
+
+            if (Binding.Descriptor.OwnerId == OwnerId &&
+                Binding.Descriptor.Usage == Usage)
+            {
+                return &Binding;
+            }
+        }
+
+        return nullptr;
+    }
+
+    static FSofaResolvedBinding* FindBinding(
+        FSofaRuntimeScene& Scene,
+        FName OwnerId,
+        ESofaBindingUsage Usage)
+    {
+        for (FSofaResolvedBinding& Binding : Scene.Bindings)
+        {
+            if (Binding.Generation != Scene.SceneGeneration)
+            {
+                continue;
+            }
+
+            if (Binding.Descriptor.OwnerId == OwnerId &&
+                Binding.Descriptor.Usage == Usage)
+            {
+                return &Binding;
+            }
+        }
+
+        return nullptr;
+    }
+
+    static const FSofaIndexedNode* FindIndexedNodeByPath(
+        const FSofaRuntimeScene& Scene,
+        const FString& NodePath)
+    {
+        if (NodePath.IsEmpty())
+        {
+            return nullptr;
+        }
+
+        const FSofaIndexedNode* IndexedNode = Scene.NodeIndexByPath.Find(NodePath);
+        if (!IndexedNode)
+        {
+            return nullptr;
+        }
+
+        if (IndexedNode->Generation != Scene.SceneGeneration)
+        {
+            return nullptr;
+        }
+
+        return IndexedNode;
+    }
+
+    static const FSofaIndexedObject* FindIndexedObjectByKey(
+        const FSofaRuntimeScene& Scene,
+        const FString& ObjectKey)
+    {
+        if (ObjectKey.IsEmpty())
+        {
+            return nullptr;
+        }
+
+        const FSofaIndexedObject* IndexedObject = Scene.ObjectIndexByKey.Find(ObjectKey);
+        if (!IndexedObject)
+        {
+            return nullptr;
+        }
+
+        if (IndexedObject->Generation != Scene.SceneGeneration)
+        {
+            return nullptr;
+        }
+
+        return IndexedObject;
+    }
+
+    static sofa::core::objectmodel::BaseObject* ResolveObjectOnNode(
+        sofa::simulation::Node* Node,
+        const FName ObjectName)
+    {
+        if (!Node || ObjectName.IsNone())
+        {
+            return nullptr;
+        }
+
+        return Node->getObject(TCHAR_TO_UTF8(*ObjectName.ToString()));
+    }
+
+    static sofa::simulation::Node* ResolveNodeByPathSegments(
+        const FSofaRuntimeScene& Scene,
+        const FString& NodePath)
+    {
+        if (!Scene.RootNode || NodePath.IsEmpty())
+        {
+            return nullptr;
+        }
+
+        if (NodePath == TEXT("root"))
+        {
+            return Scene.RootNode.get();
+        }
+
+        TArray<FString> Segments;
+        NodePath.ParseIntoArray(Segments, TEXT("/"), true);
+
+        if (Segments.Num() == 0 || Segments[0] != TEXT("root"))
+        {
+            return nullptr;
+        }
+
+        sofa::simulation::Node* Current = Scene.RootNode.get();
+
+        for (int32 i = 1; i < Segments.Num(); ++i)
+        {
+            if (!Current)
+            {
+                return nullptr;
+            }
+
+            Current = Current->getChild(TCHAR_TO_UTF8(*Segments[i]));
+        }
+
+        return Current;
+    }
+
+    static sofa::core::objectmodel::BaseObject* ResolveObjectByKey(
+        const FSofaRuntimeScene& Scene,
+        const FString& ObjectKey)
+    {
+        const FSofaIndexedObject* IndexedObject = FindIndexedObjectByKey(Scene, ObjectKey);
+        if (!IndexedObject)
+        {
+            return nullptr;
+        }
+        if (!FindIndexedNodeByPath(Scene, IndexedObject->NodePath))
+        {
+            return nullptr;
+        }
+
+        sofa::simulation::Node* Node = ResolveNodeByPathSegments(Scene, IndexedObject->NodePath);
+        if (!Node)
+        {
+            return nullptr;
+        }
+
+        return Node->getObject(TCHAR_TO_UTF8(*IndexedObject->ObjectName));
+    }
+
+    static bool ApplyTargetToBinding(
+        const FSofaRuntimeScene& Scene,
+        const FSofaResolvedBinding& Binding,
         const FSofaRuntimeToolDescriptor& ToolDesc,
         const FTransform& UETargetPose)
     {
-        using FGoalMechanicalObject = sofa::component::statecontainer::MechanicalObject<sofa::defaulttype::Vec3Types>;
-        using VecCoord = FGoalMechanicalObject::VecCoord;
-        using Coord = FGoalMechanicalObject::Coord;
+        if (!Binding.IsValidForGeneration(Scene.SceneGeneration))
+        {
+            return false;
+        }
 
-        const FVector SofaTarget = SofaCoordinateSystem::UnrealToolPoseToSofaPosition(UETargetPose, ToolDesc);
+        sofa::core::objectmodel::BaseObject* Object = ResolveObjectByKey(Scene, Binding.Descriptor.ObjectKey);
+        if (!Object)
+        {
+            return false;
+        }
 
-        auto* PositionData = GoalMO.findData("position");
+        const FVector SofaTarget =
+            SofaCoordinateSystem::UnrealToolPoseToSofaPosition(UETargetPose, ToolDesc);
 
+        sofa::core::objectmodel::BaseData* PositionData = Object->findData("position");
         if (!PositionData)
         {
             return false;
         }
 
-        auto* TypedPositionData = dynamic_cast<sofa::core::objectmodel::Data<VecCoord>*>(PositionData);
+        using RigidCoord = sofa::defaulttype::Rigid3Types::Coord;
+        using RigidVecCoord = sofa::type::vector<RigidCoord>;
+        using RigidData = sofa::core::objectmodel::Data<RigidVecCoord>;
 
-        if (!TypedPositionData)
+        if (auto* TypedData = dynamic_cast<RigidData*>(PositionData))
+        {
+            RigidVecCoord& Positions = *TypedData->beginEdit();
+
+            if (Positions.empty())
+            {
+                TypedData->endEdit();
+                return false;
+            }
+
+            RigidCoord& Pose = Positions[0];
+            Pose.getCenter() = sofa::type::Vec3(
+                static_cast<double>(SofaTarget.X),
+                static_cast<double>(SofaTarget.Y),
+                static_cast<double>(SofaTarget.Z));
+            Pose.getOrientation() = sofa::type::Quat<double>(0.0, 0.0, 0.0, 1.0);
+
+            TypedData->endEdit();
+            return true;
+        }
+
+        using Vec3Coord = sofa::defaulttype::Vec3Types::Coord;
+        using Vec3VecCoord = sofa::type::vector<Vec3Coord>;
+        using Vec3Data = sofa::core::objectmodel::Data<Vec3VecCoord>;
+
+        if (auto* TypedData = dynamic_cast<Vec3Data*>(PositionData))
+        {
+            Vec3VecCoord& Positions = *TypedData->beginEdit();
+
+            if (Positions.empty())
+            {
+                TypedData->endEdit();
+                return false;
+            }
+
+            Positions[0] = Vec3Coord(
+                static_cast<double>(SofaTarget.X),
+                static_cast<double>(SofaTarget.Y),
+                static_cast<double>(SofaTarget.Z));
+
+            TypedData->endEdit();
+            return true;
+        }
+
+        return false;
+    }
+
+    static bool ReadToolPoseFromBinding(
+        const FSofaRuntimeScene& Scene,
+        const FSofaResolvedBinding& Binding,
+        FVector& OutSofaPosition)
+    {
+        OutSofaPosition = FVector::ZeroVector;
+
+        if (!Binding.IsValidForGeneration(Scene.SceneGeneration) || !Scene.RootNode)
         {
             return false;
         }
 
-        sofa::helper::WriteAccessor<sofa::core::objectmodel::Data<VecCoord>> Positions(*TypedPositionData);
-
-        if (Positions.size() == 0)
-        {
-            Positions.resize(1);
-        }
-
-        Positions[0] = Coord(static_cast<double>(SofaTarget.X), static_cast<double>(SofaTarget.Y), static_cast<double>(SofaTarget.Z));
-
-        return true;
-    }
-
-    static bool ApplyTargetToGoalMechanicalObject(
-        const FSofaToolBinding& Binding,
-        const FTransform& UETargetPose)
-    {
-        if (!Binding.IsValid())
+        sofa::core::objectmodel::BaseObject* Object = ResolveObjectByKey(Scene, Binding.Descriptor.ObjectKey);
+        if (!Object)
         {
             return false;
         }
-        return ApplyTargetToGoalMechanicalObject(*Binding.GoalMechanicalObject, Binding.Descriptor, UETargetPose);
+
+        using RigidMechanicalObject = sofa::component::statecontainer::MechanicalObject<sofa::defaulttype::Rigid3Types>;
+
+        if (const auto* MO = dynamic_cast<const RigidMechanicalObject*>(Object))
+        {
+            const auto& Positions = MO->readPositions();
+            if (Positions.size() == 0)
+            {
+                return false;
+            }
+
+            const auto& C = Positions[0].getCenter();
+            OutSofaPosition = FVector(
+                static_cast<float>(C[0]),
+                static_cast<float>(C[1]),
+                static_cast<float>(C[2]));
+            return true;
+        }
+
+        using Vec3MechanicalObject = sofa::component::statecontainer::MechanicalObject<sofa::defaulttype::Vec3Types>;
+
+        if (const auto* MO = dynamic_cast<const Vec3MechanicalObject*>(Object))
+        {
+            const auto& Positions = MO->readPositions();
+            if (Positions.size() == 0)
+            {
+                return false;
+            }
+
+            const auto& P = Positions[0];
+            OutSofaPosition = FVector(
+                static_cast<float>(P[0]),
+                static_cast<float>(P[1]),
+                static_cast<float>(P[2]));
+            return true;
+        }
+
+        return false;
     }
 
-    static FSofaGoalMechanicalObject* FindGoalMechanicalObject(
-        sofa::simulation::Node* RootNode,
-        const FName GoalNodeName,
-        const FName GoalMechanicalObjectName)
-    {
-        if (!RootNode || GoalNodeName.IsNone() || GoalMechanicalObjectName.IsNone())
-        {
-            return nullptr;
-        }
-
-        sofa::simulation::Node* GoalNode = SofaSceneExtractor::FindChildOrDescendantNodeByName(RootNode, GoalNodeName.ToString());
-
-        if (!GoalNode)
-        {
-            return nullptr;
-        }
-
-        sofa::core::objectmodel::BaseObject* BaseObj = GoalNode->getObject(TCHAR_TO_UTF8(*GoalMechanicalObjectName.ToString()));
-
-        if (!BaseObj)
-        {
-            return nullptr;
-        }
-
-        return dynamic_cast<FSofaGoalMechanicalObject*>(BaseObj);
-    }
 #endif
+}
+
+static const FSofaRuntimeToolDescriptor* FindRuntimeToolDescriptor(
+    const FSofaRuntimeScene& Scene,
+    FName ToolId)
+{
+    for (const FSofaRuntimeToolDescriptor& ToolDesc : Scene.RuntimeTools)
+    {
+        if (ToolDesc.ToolNodeName == ToolId)
+        {
+            return &ToolDesc;
+        }
+    }
+    return nullptr;
 }
 
 
@@ -185,6 +393,7 @@ bool FSofaSimulationService::StartPrototypeSimulation(const FSofaPrototypeSceneR
 #if !SOFA_SDK_ENABLED
     return false;
 #else
+    StopSimulation();
     if (!SofaContext)
     {
         State = ESofaSimState::Error;
@@ -212,8 +421,7 @@ bool FSofaSimulationService::StartPrototypeSimulation(const FSofaPrototypeSceneR
         *Request.SceneFilePath,
         *Request.SceneName);
 
-    const FSofaSceneBuilder::FBuildResult BuildResult =
-        FSofaSceneBuilder::BuildPrototypeScene(*SofaContext, Request);
+    const FSofaSceneBuilder::FBuildResult BuildResult = FSofaSceneBuilder::BuildPrototypeScene(*SofaContext, Request);
 
     if (!BuildResult.bSuccess)
     {
@@ -222,7 +430,8 @@ bool FSofaSimulationService::StartPrototypeSimulation(const FSofaPrototypeSceneR
         return false;
     }
 
-    InitializeToolBindings();
+    FScopeLock SceneLock(&SceneMutex);
+    InitializeBindings_NoLock();
 
     FrameCounter = 0;
     SimTime = 0.0;
@@ -239,12 +448,23 @@ bool FSofaSimulationService::StartPrototypeSimulation(const FSofaPrototypeSceneR
 
 void FSofaSimulationService::StopSimulation()
 {
+
+    UE_LOG(LogSofaService, Warning,
+        TEXT("[STOP] Before stop | WorkerValid=%s Root=%p Sim=%p State=%d"),
+        Worker.IsValid() ? TEXT("true") : TEXT("false"),
+        SofaContext ? SofaContext->RootNode.get() : nullptr,
+        SofaContext ? SofaContext->SimulationPtr.get() : nullptr,
+        (int32)State);
+
     State = ESofaSimState::Stopping;
 
     if (Worker.IsValid())
     {
         Worker->RequestStop();
+        Worker->Wait();
     }
+    FScopeLock SceneLock(&SceneMutex);
+    ResetBindings_NoLock();
 
     State = ESofaSimState::Stopped;
 }
@@ -306,27 +526,15 @@ bool FSofaSimulationService::StepSimulation(double DeltaTime)
 #if !SOFA_SDK_ENABLED
     return false;
 #else
-    if (State != ESofaSimState::Running)
+
+    FScopeLock SceneLock(&SceneMutex);
+
+    if (State != ESofaSimState::Running || !SofaContext || !SofaContext->RootNode || !SofaContext->SimulationPtr)
     {
         return false;
     }
 
-    if (!SofaContext)
-    {
-        return false;
-    }
-
-    if (!SofaContext->RootNode)
-    {
-        return false;
-    }
-
-    if (!SofaContext->SimulationPtr)
-    {
-        return false;
-    }
-
-    ApplyPendingToolInputsToSimulation();
+    ApplyPendingToolInputsToSimulation_NoLock();
     sofa::simulation::node::animate(SofaContext->RootNode.get(), DeltaTime);
 
     SimTime += DeltaTime;
@@ -345,14 +553,31 @@ bool FSofaSimulationService::StepSimulation(double DeltaTime)
         ObjState.ObjectId = FName(*RuntimeObj.ObjectNodeName);
         ObjState.WorldTransform = RuntimeObj.UnrealAnchorTransform;
 
+        const FName ObjectId = FName(*RuntimeObj.ObjectNodeName);
+
         FString ExtractError;
-        if (!SofaSceneExtractor::ExtractRenderableSurfaceMesh(*SofaContext, RuntimeObj, ObjState, ExtractError))
+
+        const FSofaResolvedBinding* ObjectBinding = FindBinding(*SofaContext, ObjectId, ESofaBindingUsage::ObjectMechanical);
+
+        if (!ObjectBinding)
+        {
+            UE_LOG(LogSofaService, Warning,
+                TEXT("StepSimulation: no ObjectMechanical binding for runtime object '%s'."),
+                *RuntimeObj.ObjectNodeName);
+        }
+        else if (!SofaSceneExtractor::ExtractRenderableSurfaceMesh(
+            *SofaContext,
+            RuntimeObj,
+            *ObjectBinding,
+            ObjState,
+            ExtractError))
         {
             UE_LOG(LogSofaService, Warning,
                 TEXT("ExtractRenderableSurfaceMesh failed for runtime object '%s': %s"),
                 *RuntimeObj.ObjectNodeName,
                 *ExtractError);
         }
+
         Snapshot.Objects.Add(MoveTemp(ObjState));
     }
 
@@ -360,45 +585,39 @@ bool FSofaSimulationService::StepSimulation(double DeltaTime)
     {
         FSofaToolState ToolState;
         ToolState.ToolId = ToolDesc.ToolNodeName;
-        ToolState.WorldTransform = FTransform::Identity;
+        ToolState.UnrealLocalToolTransform = FTransform::Identity;
         ToolState.bValid = false;
 
-        FSofaGoalMechanicalObject* GoalMO =
-            FindGoalMechanicalObject(
-                SofaContext->RootNode.get(),
-                ToolDesc.ToolNodeName,
-                ToolDesc.ControlMechanicalObjectName);
+        const FSofaResolvedBinding* Binding = FindBinding(*SofaContext, ToolDesc.ToolNodeName, ESofaBindingUsage::ToolControl);
 
-        if (!GoalMO)
+        if (!Binding || !Binding->IsValidForGeneration(SofaContext->SceneGeneration))
         {
             UE_LOG(LogSofaService, Verbose,
-                TEXT("StepSimulation: no GoalMO found for tool '%s'."),
+                TEXT("StepSimulation: no valid binding for tool '%s'."),
                 *ToolDesc.ToolNodeName.ToString());
 
             Snapshot.Tools.Add(MoveTemp(ToolState));
             continue;
         }
 
-        const auto Positions = GoalMO->readPositions();
-        if (Positions.size() == 0)
+        FVector SofaPos = FVector::ZeroVector;
+        if (!ReadToolPoseFromBinding(*SofaContext, *Binding, SofaPos))
         {
             UE_LOG(LogSofaService, Verbose,
-                TEXT("StepSimulation: GoalMO '%s/%s' has no positions."),
-                *ToolDesc.ToolNodeName.ToString(),
-                *ToolDesc.ControlMechanicalObjectName.ToString());
+                TEXT("StepSimulation: binding '%s' has no readable position."),
+                *ToolDesc.ToolNodeName.ToString());
 
             Snapshot.Tools.Add(MoveTemp(ToolState));
             continue;
         }
 
-        const auto& P = Positions[0];
-        const FVector SofaPos(static_cast<float>(P[0]), static_cast<float>(P[1]), static_cast<float>(P[2]));
         const FTransform SofaPose(FQuat::Identity, SofaPos);
-        const FVector UnrealPos = SofaCoordinateSystem::SofaToolPoseToUnrealPosition(SofaPose, ToolDesc);
+        const FVector UnrealPos =
+            SofaCoordinateSystem::SofaToolPoseToUnrealPosition(SofaPose, ToolDesc);
 
-        FTransform ToolWorld = FTransform::Identity;
-        ToolWorld.SetLocation(UnrealPos);
-        ToolState.WorldTransform = ToolWorld;
+        FTransform UnrealLocalToolTransform = FTransform::Identity;
+        UnrealLocalToolTransform.SetLocation(UnrealPos);
+        ToolState.UnrealLocalToolTransform = UnrealLocalToolTransform;
         ToolState.bValid = true;
 
         Snapshot.Tools.Add(MoveTemp(ToolState));
@@ -457,86 +676,179 @@ void FSofaSimulationService::ConsumePendingToolInputs(TArray<FSofaToolInputState
     PendingToolInputs.Reset();
 }
 
-void FSofaSimulationService::InitializeToolBindings()
+void FSofaSimulationService::InitializeBindings_NoLock()
 {
-    ResetToolBindings();
+    ResetBindings_NoLock();
 
 #if !SOFA_SDK_ENABLED
     return;
 #else
-    if (!ToolBindingsStorage.IsValid())
-    {
-        UE_LOG(LogSofaService, Warning, TEXT("InitializeToolBindings: ToolBindingsStorage is invalid."));
-        return;
-    }
-
     if (!SofaContext)
     {
-        UE_LOG(LogSofaService, Warning, TEXT("InitializeToolBindings: SofaContext is null."));
+        UE_LOG(LogSofaService, Warning, TEXT("InitializeBindings: SofaContext is null."));
         return;
     }
 
     if (!SofaContext->RootNode)
     {
-        UE_LOG(LogSofaService, Warning, TEXT("InitializeToolBindings: RootNode is null."));
+        UE_LOG(LogSofaService, Warning, TEXT("InitializeBindings: RootNode is null."));
         return;
     }
+
+    UE_LOG(LogSofaService, Warning,
+        TEXT("[INIT BIND] Begin | Root=%p RuntimeTools=%d RuntimeObjects=%d Bindings=%d"),
+        SofaContext->RootNode.get(),
+        SofaContext->RuntimeTools.Num(),
+        SofaContext->RuntimeObjects.Num(),
+        SofaContext->Bindings.Num());
+
+    SofaContext->Bindings.Reserve(SofaContext->RuntimeTools.Num() + SofaContext->RuntimeObjects.Num());
 
     for (const FSofaRuntimeToolDescriptor& ToolDesc : SofaContext->RuntimeTools)
     {
-        if (ToolDesc.ToolNodeName.IsNone())
+        if (ToolDesc.ToolNodeName.IsNone() ||
+            ToolDesc.ControlMechanicalObjectName.IsNone())
         {
-            UE_LOG(LogSofaService, Warning, TEXT("InitializeToolBindings: skipped tool with empty ToolId."));
             continue;
         }
 
-        FSofaGoalMechanicalObject* GoalMO = FindGoalMechanicalObject(SofaContext->RootNode.get(), ToolDesc.ToolNodeName, ToolDesc.ControlMechanicalObjectName);
+        FSofaResolvedBinding& Binding = SofaContext->Bindings.AddDefaulted_GetRef();
 
-        if (!GoalMO)
+        const FString ToolNodePath = FString::Printf(TEXT("root/%s"), *ToolDesc.ToolNodeName.ToString());
+        //const FString ControlNodePath = FString::Printf(TEXT("%s/%s"), *ToolNodePath, *ToolDesc.ControlNodeName.ToString());
+        const FString ControlObjectKey = FString::Printf( TEXT("%s::%s"), *ToolNodePath, *ToolDesc.ControlMechanicalObjectName.ToString());
+
+        if (!FindIndexedNodeByPath(*SofaContext, ToolNodePath) || !FindIndexedObjectByKey(*SofaContext, ControlObjectKey))
         {
-            UE_LOG(LogSofaService, Warning,
-                TEXT("InitializeToolBindings: failed to bind tool '%s' (GoalMO='%s')."),
-                *ToolDesc.ToolNodeName.ToString(),
-                *ToolDesc.ControlMechanicalObjectName.ToString());
             continue;
         }
 
-        FSofaToolBinding Binding;
-        Binding.ToolId = ToolDesc.ToolNodeName;
-        Binding.Descriptor = ToolDesc;
-        Binding.GoalMechanicalObject = GoalMO;
+        Binding.Descriptor.BindingId = FName(*FString::Printf(TEXT("%s:Control"), *ToolDesc.ToolNodeName.ToString()));
+        Binding.Descriptor.OwnerId = ToolDesc.ToolNodeName;
+        Binding.Descriptor.Usage = ESofaBindingUsage::ToolControl;
+        Binding.Descriptor.NodePath = ToolNodePath;
+        Binding.Descriptor.ObjectKey = ControlObjectKey;
+        Binding.Generation = SofaContext->SceneGeneration;
+        Binding.bResolved = true;
+    }
 
-        ToolBindingsStorage->Bindings.Add(Binding.ToolId, MoveTemp(Binding));
+    for (const FSofaRuntimeObjectDescriptor& RuntimeObj : SofaContext->RuntimeObjects)
+    {
+        const FName OwnerId(*RuntimeObj.ObjectNodeName);
+        if (OwnerId.IsNone() || RuntimeObj.MechanicalObjectName.IsEmpty())
+        {
+            continue;
+        }
 
-        UE_LOG(LogSofaService, Log,
-            TEXT("InitializeToolBindings: registered tool '%s' -> object='%s'."),
-            *ToolDesc.ToolNodeName.ToString(),
-            *ToolDesc.ControlMechanicalObjectName.ToString());
+        FSofaResolvedBinding& Binding = SofaContext->Bindings.AddDefaulted_GetRef();
+
+        const FString ObjectNodePath = FString::Printf(TEXT("root/%s"), *RuntimeObj.ObjectNodeName);
+        const FString MechanicalObjectKey = FString::Printf(TEXT("%s::%s"), *ObjectNodePath, *RuntimeObj.MechanicalObjectName);
+        if (!RuntimeObj.SurfaceNodeName.IsEmpty() && !RuntimeObj.SurfaceTopologyName.IsEmpty())
+        {
+            const FString SurfaceNodePath = FString::Printf(TEXT("%s/%s"), *ObjectNodePath, *RuntimeObj.SurfaceNodeName);
+            const FString SurfaceTopologyObjectKey = FString::Printf(TEXT("%s::%s"), *SurfaceNodePath, *RuntimeObj.SurfaceTopologyName);
+
+            if (FindIndexedNodeByPath(*SofaContext, SurfaceNodePath) &&
+                FindIndexedObjectByKey(*SofaContext, SurfaceTopologyObjectKey))
+            {
+                Binding.Descriptor.SurfaceTopologyObjectKey = SurfaceTopologyObjectKey;
+            }
+        }
+
+        if (!RuntimeObj.VisualNodeName.IsEmpty())
+        {
+            const FString VisualNodePath =
+                FString::Printf(TEXT("%s/%s"), *ObjectNodePath, *RuntimeObj.VisualNodeName);
+
+            if (FindIndexedNodeByPath(*SofaContext, VisualNodePath))
+            {
+                Binding.Descriptor.VisualNodePath = VisualNodePath;
+
+                if (!RuntimeObj.VisualMechanicalObjectName.IsEmpty())
+                {
+                    const FString VisualObjectKey = FString::Printf(TEXT("%s::%s"), *VisualNodePath, *RuntimeObj.VisualMechanicalObjectName);
+
+                    if (FindIndexedObjectByKey(*SofaContext, VisualObjectKey))
+                    {
+                        Binding.Descriptor.VisualObjectKey = VisualObjectKey;
+                    }
+                }
+
+                if (!RuntimeObj.VisualTopologyName.IsEmpty())
+                {
+                    const FString VisualTopologyObjectKey = FString::Printf(TEXT("%s::%s"), *VisualNodePath, *RuntimeObj.VisualTopologyName);
+                    if (FindIndexedObjectByKey(*SofaContext, VisualTopologyObjectKey))
+                    {
+                        Binding.Descriptor.VisualTopologyObjectKey = VisualTopologyObjectKey;
+                    }
+                }
+            }
+        }
+
+        if (!FindIndexedNodeByPath(*SofaContext, ObjectNodePath) || !FindIndexedObjectByKey(*SofaContext, MechanicalObjectKey))
+        {
+            continue;
+        }
+
+        Binding.Descriptor.BindingId = FName(*FString::Printf(TEXT("%s:Mechanical"), *RuntimeObj.ObjectNodeName));
+        Binding.Descriptor.OwnerId = FName(RuntimeObj.ObjectNodeName);
+        Binding.Descriptor.Usage = ESofaBindingUsage::ObjectMechanical;
+        Binding.Descriptor.NodePath = ObjectNodePath;
+        Binding.Descriptor.ObjectKey = MechanicalObjectKey;
+        Binding.Generation = SofaContext->SceneGeneration;
+        Binding.bResolved = true;
     }
 
     UE_LOG(LogSofaService, Log,
-        TEXT("InitializeToolBindings: %d tool binding(s) registered."),
-        ToolBindingsStorage->Bindings.Num());
+        TEXT("InitializeBindings: %d binding(s) registered."),
+        SofaContext->Bindings.Num());
 #endif
 }
 
-void FSofaSimulationService::ResetToolBindings()
+void FSofaSimulationService::InitializeBindings()
 {
-    if (!ToolBindingsStorage.IsValid())
-    {
-        ToolBindingsStorage = MakeShared<FSofaToolBindingsStorage>();
-        return;
-    }
-    ToolBindingsStorage->Bindings.Reset();
+    FScopeLock SceneLock(&SceneMutex);
+    InitializeBindings_NoLock();
 }
 
-void FSofaSimulationService::ApplyPendingToolInputsToSimulation()
+void FSofaSimulationService::ResetBindings_NoLock()
+{
+    UE_LOG(LogSofaService, Warning,
+        TEXT("[RESET BIND] Before | SofaContext=%p Root=%p Bindings.Num=%d"),
+        SofaContext.Get(),
+        SofaContext ? SofaContext->RootNode.get() : nullptr,
+        SofaContext ? SofaContext->Bindings.Num() : -1);
+
+    if (!SofaContext)
+    {
+        UE_LOG(LogSofaService, Error, TEXT("ResetBindings_NoLock: invalid SofaContext"));
+        return;
+    }
+
+    SofaContext->Bindings.Reset();
+}
+
+void FSofaSimulationService::ResetBindings()
+{
+    FScopeLock SceneLock(&SceneMutex);
+    ResetBindings_NoLock();
+}
+
+void FSofaSimulationService::ApplyPendingToolInputsToSimulation_NoLock()
 {
 #if !SOFA_SDK_ENABLED
     return;
 #else
-    if (!ToolBindingsStorage.IsValid())
+    if (!SofaContext)
     {
+        UE_LOG(LogSofaService, Error, TEXT("ApplyPendingToolInputsToSimulation: invalid SofaContext"));
+        return;
+    }
+
+    if (SofaContext->Bindings.IsEmpty())
+    {
+        UE_LOG(LogSofaService, Warning, TEXT("ApplyPendingToolInputsToSimulation: no binding found"));
         return;
     }
 
@@ -550,53 +862,44 @@ void FSofaSimulationService::ApplyPendingToolInputsToSimulation()
 
     for (const FSofaToolInputState& Input : Inputs)
     {
-        if (Input.ToolId.IsNone())
+        if (Input.ToolId.IsNone() || !Input.bEnabled)
         {
-            UE_LOG(LogSofaService, Verbose,
-                TEXT("ApplyPendingToolInputsToSimulation: skipped input with empty ToolId."));
             continue;
         }
 
-        if (!Input.bEnabled)
-        {
-            UE_LOG(LogSofaService, Verbose,
-                TEXT("ApplyPendingToolInputsToSimulation: tool '%s' disabled, skipping."),
-                *Input.ToolId.ToString());
-            continue;
-        }
+        FSofaResolvedBinding* Binding = FindBinding(*SofaContext, Input.ToolId, ESofaBindingUsage::ToolControl);
 
-        FSofaToolBinding* Binding = ToolBindingsStorage->Bindings.Find(Input.ToolId);
-        if (!Binding)
+        if (!Binding || !Binding->IsValidForGeneration(SofaContext->SceneGeneration))
         {
             UE_LOG(LogSofaService, Warning,
-                TEXT("ApplyPendingToolInputsToSimulation: no binding found for tool '%s'."),
+                TEXT("ApplyPendingToolInputsToSimulation: no valid binding for tool '%s'."),
                 *Input.ToolId.ToString());
             continue;
         }
 
-        if (!Binding->IsValid())
+        const FSofaRuntimeToolDescriptor* ToolDesc = FindRuntimeToolDescriptor(*SofaContext, Input.ToolId);
+
+        if (!ToolDesc)
         {
             UE_LOG(LogSofaService, Warning,
-                TEXT("ApplyPendingToolInputsToSimulation: invalid binding for tool '%s'."),
+                TEXT("ApplyPendingToolInputsToSimulation: missing runtime descriptor for tool '%s'."),
                 *Input.ToolId.ToString());
             continue;
         }
 
-        if (!ApplyTargetToGoalMechanicalObject(
-            *Binding->GoalMechanicalObject,
-            Binding->Descriptor,
-            Input.TargetPose))
+        if (!ApplyTargetToBinding(*SofaContext, *Binding, *ToolDesc, Input.TargetPose))
         {
             UE_LOG(LogSofaService, Warning,
                 TEXT("ApplyPendingToolInputsToSimulation: failed to apply pose for tool '%s'."),
                 *Input.ToolId.ToString());
             continue;
         }
-
-        UE_LOG(LogSofaService, Verbose,
-            TEXT("ApplyPendingToolInputsToSimulation: applied pose for tool '%s' at t=%.6f."),
-            *Input.ToolId.ToString(),
-            Input.Timestamp);
     }
 #endif
+}
+
+void FSofaSimulationService::ApplyPendingToolInputsToSimulation()
+{
+    FScopeLock SceneLock(&SceneMutex);
+    ApplyPendingToolInputsToSimulation_NoLock();
 }

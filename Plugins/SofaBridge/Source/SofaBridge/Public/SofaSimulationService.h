@@ -48,15 +48,20 @@ private:
     void PublishSnapshot(FSofaFrameSnapshot&& Snapshot);
     void ProcessPendingCommands();
     void HandleCommand(const FSofaCommand& Command);
-    void InitializeToolBindings();
-    void ResetToolBindings();
+    void InitializeBindings();
+    void InitializeBindings_NoLock();
+    void ResetBindings();
+    void ResetBindings_NoLock();
     void ApplyPendingToolInputsToSimulation();
+    void ApplyPendingToolInputsToSimulation_NoLock();
     void ConsumePendingToolInputs(TArray<FSofaToolInputState>& OutInputs);
 
 private:
-    TUniquePtr<FSofaRuntimeScene> SofaContext;
 
     TUniquePtr<FSofaSimWorker> Worker;
+
+    mutable FCriticalSection SceneMutex;
+    TUniquePtr<FSofaRuntimeScene> SofaContext;
 
     mutable FCriticalSection CommandMutex;
     TQueue<FSofaCommand, EQueueMode::Mpsc> PendingCommands;

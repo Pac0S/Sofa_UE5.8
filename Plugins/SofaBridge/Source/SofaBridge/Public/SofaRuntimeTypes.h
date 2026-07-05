@@ -146,6 +146,9 @@ struct SOFABRIDGE_API FSofaRuntimeToolDescriptor
     FName ToolNodeName = TEXT("PrimaryTool");
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    FName CollisionNodeName = TEXT("PrimaryToolCollision");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
     FName ControlMechanicalObjectName = TEXT("controlMO");
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
@@ -167,7 +170,7 @@ struct FSofaToolState
     FName ToolId = NAME_None;
 
     UPROPERTY(BlueprintReadOnly)
-    FTransform WorldTransform = FTransform::Identity;
+    FTransform UnrealLocalToolTransform = FTransform::Identity;
 
     UPROPERTY(BlueprintReadOnly)
     bool bValid = false;
@@ -193,4 +196,30 @@ struct SOFABRIDGE_API FSofaFrameSnapshot
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
     TArray<FSofaToolState> Tools;
+};
+
+enum class ESofaBindingUsage : uint8
+{
+    ToolControl,
+    ToolCollision,
+    ObjectGoal,
+    ConstraintTarget,
+    AttachmentTarget,
+    ObjectMechanical,
+    ObjectSurface,
+    ObjectVisual,
+    Custom
+};
+
+struct FSofaMechanicalBindingDescriptor
+{
+    FName BindingId;
+    FName OwnerId;
+    ESofaBindingUsage Usage = ESofaBindingUsage::Custom;
+    FString NodePath;
+    FString ObjectKey;
+    FString SurfaceTopologyObjectKey;
+    FString VisualNodePath;
+    FString VisualObjectKey;
+    FString VisualTopologyObjectKey;
 };

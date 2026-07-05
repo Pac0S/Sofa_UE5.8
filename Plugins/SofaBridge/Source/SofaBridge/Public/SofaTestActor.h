@@ -54,7 +54,7 @@ public:
     FString SceneName = TEXT("liver");
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA Test")
-    FString ExternalScenesDirectory = TEXT("C:/Users/Pakito/Documents/Projets/Anisim/SofaScenes");
+    FString ExternalScenesDirectory = TEXT("C:/Users/Pakito/Documents/Projets/Anisim/Sofa_UE_5_8_test/SofaScenes");
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA Test")
     FString RelativeScenesDirectory = TEXT("SofaScenes");
@@ -69,7 +69,7 @@ public:
     TObjectPtr<ASofaToolProxyActor> SpawnedToolProxy = nullptr;
 
     UPROPERTY(EditAnywhere, Category = "SOFA|Tool")
-    FName DefaultToolId = TEXT("PrimaryTool");
+    FName DefaultToolId = TEXT("TOOL_Primary");
 
 private:
     void DrawSofaDebug(const FSofaObjectState& ObjState);
@@ -85,5 +85,5 @@ protected:
     TObjectPtr<USofaSceneSubsystem> SofaSubsystem = nullptr;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SOFA")
-    FName VisualizedObjectId = TEXT("Liver01");
+    FName VisualizedObjectId = TEXT("OBJ_Liver");
 };

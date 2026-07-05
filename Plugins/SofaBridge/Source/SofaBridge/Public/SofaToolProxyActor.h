@@ -58,10 +58,15 @@ protected:
 private:
     bool bInitialized = false;
     bool bHasSnapshotPose = false;
+    FTransform DesiredTransform = FTransform::Identity;
     FTransform LastSnapshotTransform = FTransform::Identity;
+    FTransform InitialSpawnTransform = FTransform::Identity;
 
     void UpdateKeyboardControl(float DeltaSeconds);
     void SubmitCurrentToolInput();
     void RefreshFromSnapshot();
     void DrawToolDebug();
+
+    FTransform ToolWorldToLocalTransform(FTransform WorldTransform);
+    FTransform ToolLocalToWorldTransform(FTransform LocalTransform);
 };

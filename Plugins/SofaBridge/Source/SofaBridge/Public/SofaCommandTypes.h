@@ -17,6 +17,14 @@ enum class ESofaCommandType : uint8
     ClearInteractorTargetPose   UMETA(DisplayName = "ClearInteractorTargetPose")
 };
 
+UENUM(BlueprintType)
+enum class ESofaToolControlMode : uint8
+{
+    None        UMETA(DisplayName = "None"),
+    PoseTarget  UMETA(DisplayName = "PoseTarget")
+};
+
+
 USTRUCT(BlueprintType)
 struct SOFABRIDGE_API FSofaCommand
 {
@@ -27,4 +35,21 @@ struct SOFABRIDGE_API FSofaCommand
     FVector VectorValue = FVector::ZeroVector;
     FString StringValue;
     double Timestamp = 0.0;
+};
+
+USTRUCT(BlueprintType)
+struct SOFABRIDGE_API FSofaToolInputState
+{
+    GENERATED_BODY()
+    FName ToolId = NAME_None;
+    FTransform TargetPose = FTransform::Identity;
+    bool bEnabled = true;
+    double Timestamp = 0.0;
+};
+
+USTRUCT(BlueprintType)
+struct SOFABRIDGE_API FSofaFrameInput
+{
+    GENERATED_BODY()
+    TArray<FSofaToolInputState> Tools;
 };

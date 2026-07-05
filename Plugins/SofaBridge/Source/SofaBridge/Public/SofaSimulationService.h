@@ -10,6 +10,7 @@ class FSofaSimWorker;
 class FSofaSceneBuilder;
 struct FSofaRuntimeScene;
 struct FSofaRuntimeObjectDescriptor;
+struct FSofaToolBindingsStorage;
 
 namespace sofa::core::objectmodel
 {
@@ -18,6 +19,7 @@ namespace sofa::core::objectmodel
 
 class SOFABRIDGE_API FSofaSimulationService
 {
+
 public:
     FSofaSimulationService();
     ~FSofaSimulationService();
@@ -36,14 +38,20 @@ public:
 
     bool GetRuntimeObjectMaterialPath(FName ObjectId, FString& OutMaterialPath) const;
 
+    bool SubmitToolInput(const FSofaToolInputState& Input);
+
 private:
     friend class FSofaSimWorker;
     friend class FSofaSceneBuilder;
 
     bool InitializeSofaRuntime();
-    void PublishSnapshot(const FSofaFrameSnapshot& Snapshot);
+    void PublishSnapshot(FSofaFrameSnapshot&& Snapshot);
     void ProcessPendingCommands();
     void HandleCommand(const FSofaCommand& Command);
+    void InitializeToolBindings();
+    void ResetToolBindings();
+    void ApplyPendingToolInputsToSimulation();
+    void ConsumePendingToolInputs(TArray<FSofaToolInputState>& OutInputs);
 
 private:
     TUniquePtr<FSofaRuntimeScene> SofaContext;
@@ -56,12 +64,16 @@ private:
     mutable FCriticalSection SnapshotMutex;
     FSofaFrameSnapshot LatestSnapshot;
 
+    FCriticalSection PendingToolInputsMutex;
+    TMap<FName, FSofaToolInputState> PendingToolInputs;
+
+    TArray<FSofaRuntimeToolDescriptor> RuntimeTools;
+
+    TSharedPtr<struct FSofaToolBindingsStorage> ToolBindingsStorage;
+
     ESofaSimState State = ESofaSimState::Stopped;
     uint64 FrameCounter = 0;
     double SimTime = 0.0;
-
-    FCriticalSection InteractorTargetsMutex;
-    TMap<FName, FTransform> PendingInteractorTargetPoses;
 
     bool LoggedChildNodes = false;
 };

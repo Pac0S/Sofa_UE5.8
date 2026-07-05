@@ -8,6 +8,11 @@ ASofaTestActor::ASofaTestActor()
 {
     PrimaryActorTick.bCanEverTick = true;
 
+    if (!ToolProxyActorClass)
+    {
+        ToolProxyActorClass = ASofaToolProxyActor::StaticClass();
+    }
+
     USceneComponent* SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
     SetRootComponent(SceneRoot);
 
@@ -89,6 +94,7 @@ void ASofaTestActor::Tick(float DeltaTime)
         return;
     }
 
+    SpawnToolProxyIfNeeded();
     for (const FSofaObjectState& ObjState : Snapshot.Objects)
     {
         UE_LOG(LogTemp, Verbose, TEXT("SofaTestActor: updating PMC for %s with %d points and %d triangles"),
@@ -176,4 +182,48 @@ void ASofaTestActor::DrawDebugSurfaceActorSpace(const FSofaObjectState& ObjState
             DrawDebugLine(World, WorldC, WorldA, FColor::Cyan, false, 0.f, 0, 0.5f);
         }
     }
+}
+
+void ASofaTestActor::SpawnToolProxyIfNeeded()
+{
+    if (SpawnedToolProxy || !SofaSubsystem)
+    {
+        return;
+    }
+    UE_LOG(LogTemp, Log,
+        TEXT("ToolProxyActorClass valid=%s"),
+        ToolProxyActorClass ? TEXT("true") : TEXT("false"));
+
+    UClass* ClassToSpawn = ToolProxyActorClass
+        ? ToolProxyActorClass.Get()
+        : ASofaToolProxyActor::StaticClass();
+
+    if (!ClassToSpawn)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("SpawnToolProxyIfNeeded: no ToolProxyActorClass available."));
+        return;
+    }
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Owner = this;
+    SpawnParams.SpawnCollisionHandlingOverride =
+        ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    SpawnedToolProxy = GetWorld()->SpawnActor<ASofaToolProxyActor>(
+        ClassToSpawn,
+        GetActorLocation(),
+        GetActorRotation(),
+        SpawnParams);
+
+    UE_LOG(LogTemp, Log,
+        TEXT("SpawnedToolProxy valid=%s"),
+        SpawnedToolProxy ? TEXT("true") : TEXT("false"));
+
+    if (!SpawnedToolProxy)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("SpawnToolProxyIfNeeded: SpawnActor failed."));
+        return;
+    }
+
+    SpawnedToolProxy->InitializeToolProxy(SofaSubsystem, DefaultToolId);
 }

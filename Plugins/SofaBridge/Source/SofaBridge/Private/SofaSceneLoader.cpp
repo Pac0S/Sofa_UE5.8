@@ -314,7 +314,16 @@ bool USofaSceneLoader::ParseSceneDocument(
 
     ExtractAttributes(RootXmlNode, OutSceneDefinition.GlobalRootAttributes);
 
-    bool bFoundSimulationRoot = false;
+    OutSceneDefinition.RootNode = FSofaNodeDefinition();
+    OutSceneDefinition.RootNode.Name = RootXmlNode->GetAttribute(TEXT("name"));
+    if (OutSceneDefinition.RootNode.Name.IsEmpty())
+    {
+        OutSceneDefinition.RootNode.Name = TEXT("root");
+    }
+
+    ExtractAttributes(RootXmlNode, OutSceneDefinition.RootNode.Attributes);
+    OutSceneDefinition.RootNode.Components.Reset();
+    OutSceneDefinition.RootNode.Children.Reset();
 
     const TArray<FXmlNode*>& RootChildren = RootXmlNode->GetChildrenNodes();
     for (const FXmlNode* ChildNode : RootChildren)
@@ -335,29 +344,18 @@ bool USofaSceneLoader::ParseSceneDocument(
 
         if (IsNodeElement(ChildNode))
         {
-            if (bFoundSimulationRoot)
-            {
-                UE_LOG(
-                    LogSofaSceneLoader,
-                    Warning,
-                    TEXT("Multiple top-level simulation nodes found. Only the first one will be used: '%s'"),
-                    *OutSceneDefinition.RootNode.Name);
-                continue;
-            }
-
-            FSofaNodeDefinition RootNodeDefinition;
+            FSofaNodeDefinition ChildNodeDefinition;
             if (!ParseNodeElement(
                 ChildNode,
                 OutSceneDefinition.SceneDirectory,
                 Options,
-                RootNodeDefinition,
+                ChildNodeDefinition,
                 OutErrorMessage))
             {
                 return false;
             }
 
-            OutSceneDefinition.RootNode = MoveTemp(RootNodeDefinition);
-            bFoundSimulationRoot = true;
+            OutSceneDefinition.RootNode.Children.Add(MoveTemp(ChildNodeDefinition));
             continue;
         }
 
@@ -385,10 +383,11 @@ bool USofaSceneLoader::ParseSceneDocument(
             *ChildNode->GetTag());
     }
 
-    if (!bFoundSimulationRoot)
+    if (OutSceneDefinition.RootNode.Children.Num() == 0 &&
+        OutSceneDefinition.GlobalRootComponents.Num() == 0)
     {
         OutErrorMessage = FString::Printf(
-            TEXT("No top-level simulation node found in scene file: %s"),
+            TEXT("No simulation content found in scene file: %s"),
             *SceneFilePath);
         return false;
     }
@@ -750,6 +749,16 @@ bool USofaSceneLoader::LoadOverridesFromJsonFile(
         {
             OutError = FString::Printf(
                 TEXT("Invalid override in '%s': objectId is empty"),
+                *JsonFilePath);
+            return false;
+        }
+    }
+    for (const FSofaToolIntegrationOverride& ToolOverride : OutOverrides.Tools)
+    {
+        if (ToolOverride.ToolId.IsEmpty())
+        {
+            OutError = FString::Printf(
+                TEXT("Invalid tool override in '%s': nodeName is empty"),
                 *JsonFilePath);
             return false;
         }

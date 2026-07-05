@@ -11,13 +11,10 @@ struct SOFABRIDGE_API FSofaRuntimeObjectDescriptor
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA")
-    FString ObjectId;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA")
     ESofaRuntimeObjectRole Role = ESofaRuntimeObjectRole::Unknown;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA")
-    FString SimulationNodeName;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    FString ObjectNodeName;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA")
     FString MechanicalObjectName = TEXT("mstate");
@@ -43,8 +40,11 @@ struct SOFABRIDGE_API FSofaRuntimeObjectDescriptor
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA")
     FString VisualMaterialPath;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    FName CollisionNodeName = TEXT("Collision");;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA")
-    FTransform UnrealObjectTransform = FTransform::Identity;
+    FTransform UnrealAnchorTransform = FTransform::Identity;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA")
     float SofaScale = 10.0f;
@@ -138,6 +138,43 @@ struct SOFABRIDGE_API FSofaObjectState
 };
 
 USTRUCT(BlueprintType)
+struct SOFABRIDGE_API FSofaRuntimeToolDescriptor
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    FName ToolNodeName = TEXT("PrimaryTool");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    FName ControlMechanicalObjectName = TEXT("controlMO");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    FTransform UnrealAnchorTransform = FTransform::Identity;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    float SofaScale = 10.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    bool bVisible = true;
+};
+
+USTRUCT(BlueprintType)
+struct FSofaToolState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly)
+    FName ToolId = NAME_None;
+
+    UPROPERTY(BlueprintReadOnly)
+    FTransform WorldTransform = FTransform::Identity;
+
+    UPROPERTY(BlueprintReadOnly)
+    bool bValid = false;
+};
+
+
+USTRUCT(BlueprintType)
 struct SOFABRIDGE_API FSofaFrameSnapshot
 {
     GENERATED_BODY()
@@ -153,4 +190,7 @@ struct SOFABRIDGE_API FSofaFrameSnapshot
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA")
     TArray<FSofaObjectState> Objects;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    TArray<FSofaToolState> Tools;
 };

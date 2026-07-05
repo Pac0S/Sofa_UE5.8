@@ -146,7 +146,18 @@ namespace SofaCoordinateSystem
         const float SafeScale = FMath::IsNearlyZero(RuntimeObj.SofaScale) ? 1.0f : RuntimeObj.SofaScale;
         const FVector SofaScaled(InSofaPosition.X * SafeScale, InSofaPosition.Y * SafeScale, InSofaPosition.Z * SafeScale);
         const FVector UnrealLocalPosition(SofaScaled.X, SofaScaled.Z, SofaScaled.Y);
-        return RuntimeObj.UnrealObjectTransform.TransformPosition(UnrealLocalPosition);
+        return RuntimeObj.UnrealAnchorTransform.TransformPosition(UnrealLocalPosition);
+    }
+
+    FVector SofaToolPoseToUnrealPosition(
+        const FTransform& InSofaPose,
+        const FSofaRuntimeToolDescriptor& ToolDesc)
+    {
+        const float SafeScale = FMath::IsNearlyZero(ToolDesc.SofaScale) ? 1.0f : ToolDesc.SofaScale;
+        const FVector SofaPosition = InSofaPose.GetLocation();
+        const FVector UnrealLocalPosition(SofaPosition.X * SafeScale, SofaPosition.Z * SafeScale, SofaPosition.Y * SafeScale);
+
+        return ToolDesc.UnrealAnchorTransform.TransformPosition(UnrealLocalPosition);
     }
 
     FVector UnrealToSofaPosition(
@@ -154,8 +165,20 @@ namespace SofaCoordinateSystem
         const FSofaRuntimeObjectDescriptor& RuntimeObj)
     {
         const float SafeScale = FMath::IsNearlyZero(RuntimeObj.SofaScale) ? 1.0f : RuntimeObj.SofaScale;
-        const FVector UnrealLocalPosition = RuntimeObj.UnrealObjectTransform.InverseTransformPosition(InUnrealPosition);
+        const FVector UnrealLocalPosition = RuntimeObj.UnrealAnchorTransform.InverseTransformPosition(InUnrealPosition);
         const FVector SofaScaled(UnrealLocalPosition.X, UnrealLocalPosition.Z, UnrealLocalPosition.Y);
+
+        return FVector(SofaScaled.X / SafeScale, SofaScaled.Y / SafeScale, SofaScaled.Z / SafeScale);
+    }
+
+    FVector UnrealToolPoseToSofaPosition(
+        const FTransform& InUnrealPose,
+        const FSofaRuntimeToolDescriptor& ToolDesc)
+    {
+        const float SafeScale = FMath::IsNearlyZero(ToolDesc.SofaScale) ? 1.0f : ToolDesc.SofaScale;
+        const FVector UnrealWorldPosition = InUnrealPose.GetLocation();
+        const FVector UnrealLocalPosition = ToolDesc.UnrealAnchorTransform.InverseTransformPosition(UnrealWorldPosition);
+        const FVector SofaScaled(UnrealLocalPosition.X, UnrealLocalPosition.Z,UnrealLocalPosition.Y);
 
         return FVector(SofaScaled.X / SafeScale, SofaScaled.Y / SafeScale, SofaScaled.Z / SafeScale);
     }
@@ -165,7 +188,7 @@ namespace SofaSceneExtractor
 {
     DEFINE_LOG_CATEGORY_STATIC(LogSofaSceneExtractor, Log, All);
 
-    static void LogChildNodes(const sofa::simulation::Node::SPtr& Node)
+    void LogChildNodes(const sofa::simulation::Node::SPtr& Node)
     {
         if (!Node)
         {
@@ -212,16 +235,85 @@ namespace SofaSceneExtractor
             return nullptr;
         }
 
-        sofa::simulation::Node* ObjectNode = Root->getChild(TCHAR_TO_UTF8(*RuntimeObj.SimulationNodeName));
+        sofa::simulation::Node* ObjectNode =
+            FindChildOrDescendantNodeByName(Root, RuntimeObj.ObjectNodeName);
+
         if (!ObjectNode)
         {
             OutError = FString::Printf(
-                TEXT("Missing SOFA child node '%s'"),
-                *RuntimeObj.SimulationNodeName);
+                TEXT("Missing SOFA node '%s' in scene hierarchy"),
+                *RuntimeObj.ObjectNodeName);
             return nullptr;
         }
 
         return ObjectNode;
+    }
+
+    sofa::simulation::Node* FindNodeByNameRecursive(
+        sofa::simulation::Node* StartNode,
+        const FString& TargetName)
+    {
+        if (!StartNode || TargetName.IsEmpty())
+        {
+            return nullptr;
+        }
+
+        const std::string TargetNameUtf8 = TCHAR_TO_UTF8(*TargetName);
+
+        if (StartNode->getName() == TargetNameUtf8)
+        {
+            return StartNode;
+        }
+
+        const auto& Children = StartNode->getChildren();
+        for (sofa::core::objectmodel::BaseNode* ChildBaseNode : Children)
+        {
+            sofa::simulation::Node* ChildNode = dynamic_cast<sofa::simulation::Node*>(ChildBaseNode);
+            if (!ChildNode)
+            {
+                continue;
+            }
+
+            if (sofa::simulation::Node* FoundNode = FindNodeByNameRecursive(ChildNode, TargetName))
+            {
+                return FoundNode;
+            }
+        }
+
+        return nullptr;
+    }
+
+    sofa::simulation::Node* FindChildOrDescendantNodeByName(
+        sofa::simulation::Node* ParentNode,
+        const FString& TargetName)
+    {
+        if (!ParentNode || TargetName.IsEmpty())
+        {
+            return nullptr;
+        }
+
+        if (sofa::simulation::Node* DirectChild =
+            ParentNode->getChild(TCHAR_TO_UTF8(*TargetName)))
+        {
+            return DirectChild;
+        }
+
+        const auto& Children = ParentNode->getChildren();
+        for (sofa::core::objectmodel::BaseNode* ChildBaseNode : Children)
+        {
+            sofa::simulation::Node* ChildNode = dynamic_cast<sofa::simulation::Node*>(ChildBaseNode);
+            if (!ChildNode)
+            {
+                continue;
+            }
+
+            if (sofa::simulation::Node* FoundNode = FindNodeByNameRecursive(ChildNode, TargetName))
+            {
+                return FoundNode;
+            }
+        }
+
+        return nullptr;
     }
 
     bool ExtractMechanicalDebugPoints(
@@ -247,7 +339,7 @@ namespace SofaSceneExtractor
             OutError = FString::Printf(
                 TEXT("Missing object '%s' in node '%s'"),
                 *RuntimeObj.MechanicalObjectName,
-                *RuntimeObj.SimulationNodeName);
+                *RuntimeObj.ObjectNodeName);
             UE_LOG(LogSofaSceneExtractor, Error, TEXT("%s"), *OutError);
             return false;
         }
@@ -260,7 +352,7 @@ namespace SofaSceneExtractor
             OutError = FString::Printf(
                 TEXT("Object '%s' in node '%s' is not a MechanicalObject<Vec3d>"),
                 *RuntimeObj.MechanicalObjectName,
-                *RuntimeObj.SimulationNodeName);
+                *RuntimeObj.ObjectNodeName);
             UE_LOG(LogSofaSceneExtractor, Error, TEXT("%s"), *OutError);
             return false;
         }
@@ -296,15 +388,14 @@ namespace SofaSceneExtractor
             return false;
         }
 
-        sofa::simulation::Node* SurfaceNode =
-            ObjectNode->getChild(TCHAR_TO_UTF8(*RuntimeObj.SurfaceNodeName));
+        sofa::simulation::Node* SurfaceNode = FindChildOrDescendantNodeByName(ObjectNode, RuntimeObj.SurfaceNodeName);
 
         if (!SurfaceNode)
         {
             OutError = FString::Printf(
-                TEXT("Surface child '%s' not found under '%s'"),
+                TEXT("Surface node '%s' not found under subtree '%s'"),
                 *RuntimeObj.SurfaceNodeName,
-                *RuntimeObj.SimulationNodeName);
+                *RuntimeObj.ObjectNodeName);
             return false;
         }
 
@@ -316,7 +407,7 @@ namespace SofaSceneExtractor
             OutError = FString::Printf(
                 TEXT("Surface topology '%s' not found under '%s/%s'"),
                 *RuntimeObj.SurfaceTopologyName,
-                *RuntimeObj.SimulationNodeName,
+                *RuntimeObj.ObjectNodeName,
                 *RuntimeObj.SurfaceNodeName);
             return false;
         }
@@ -366,15 +457,14 @@ namespace SofaSceneExtractor
             return false;
         }
 
-        sofa::simulation::Node* VisualNode =
-            ObjectNode->getChild(TCHAR_TO_UTF8(*RuntimeObj.VisualNodeName));
+        sofa::simulation::Node* VisualNode = FindChildOrDescendantNodeByName(ObjectNode, RuntimeObj.VisualNodeName);
 
         if (!VisualNode)
         {
             OutError = FString::Printf(
-                TEXT("Visual child node '%s' not found under '%s'"),
+                TEXT("Visual node '%s' not found under subtree '%s'"),
                 *RuntimeObj.VisualNodeName,
-                *RuntimeObj.SimulationNodeName);
+                *RuntimeObj.ObjectNodeName);
             return false;
         }
 
@@ -391,7 +481,7 @@ namespace SofaSceneExtractor
             OutError = FString::Printf(
                 TEXT("Missing visual MechanicalObject '%s' or fallback 'mstate' in node '%s/%s'"),
                 *RuntimeObj.VisualMechanicalObjectName,
-                *RuntimeObj.SimulationNodeName,
+                *RuntimeObj.ObjectNodeName,
                 *RuntimeObj.VisualNodeName);
             return false;
         }
@@ -418,7 +508,7 @@ namespace SofaSceneExtractor
             OutError = FString::Printf(
                 TEXT("Missing visual topology '%s' or fallback 'topo' in node '%s/%s'"),
                 *RuntimeObj.VisualTopologyName,
-                *RuntimeObj.SimulationNodeName,
+                *RuntimeObj.ObjectNodeName,
                 *RuntimeObj.VisualNodeName);
             return false;
         }

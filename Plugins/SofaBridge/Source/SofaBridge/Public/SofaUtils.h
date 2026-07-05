@@ -45,6 +45,13 @@ namespace SofaCoordinateSystem
 {
     FVector SofaToUnrealPosition(const FVector& InSofaPosition,const FSofaRuntimeObjectDescriptor& RuntimeObj);
     FVector UnrealToSofaPosition(const FVector& InUnrealPosition, const FSofaRuntimeObjectDescriptor& RuntimeObj);
+    FVector UnrealToolPoseToSofaPosition(const FTransform& InUnrealPose, const FSofaRuntimeToolDescriptor& ToolDesc);
+    FVector SofaToolPoseToUnrealPosition(const FTransform& InSofaPose, const FSofaRuntimeToolDescriptor& ToolDesc);
+}
+
+namespace sofa::simulation
+{
+    class Node;
 }
 
 namespace SofaSceneExtractor
@@ -72,4 +79,12 @@ namespace SofaSceneExtractor
         const FSofaRuntimeObjectDescriptor& RuntimeObj,
         FSofaObjectState& OutState,
         FString& OutError);
+
+    sofa::simulation::Node* FindNodeByNameRecursive(
+        sofa::simulation::Node* StartNode,
+        const FString& TargetName);
+
+    sofa::simulation::Node* FindChildOrDescendantNodeByName(
+        sofa::simulation::Node* ParentNode,
+        const FString& TargetName);
 }

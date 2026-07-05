@@ -220,6 +220,20 @@ namespace
         return true;
     }
 
+    static FString FindNodeRefName(
+        const TArray<FSofaNodeRef>& NodeRefs,
+        ESofaNodeRefRole Role)
+    {
+        for (const FSofaNodeRef& Ref : NodeRefs)
+        {
+            if (Ref.Role == Role && !Ref.Name.IsNone())
+            {
+                return Ref.Name.ToString();
+            }
+        }
+        return FString();
+    }
+
     static const FSofaObjectIntegrationOverride* FindObjectOverride(
         const FSofaSceneIntegrationOverrides& Overrides,
         const FString& ObjectId)
@@ -227,6 +241,20 @@ namespace
         for (const FSofaObjectIntegrationOverride& It : Overrides.Objects)
         {
             if (It.ObjectId == ObjectId)
+            {
+                return &It;
+            }
+        }
+        return nullptr;
+    }
+
+    static const FSofaToolIntegrationOverride* FindToolOverride(
+        const FSofaSceneIntegrationOverrides& Overrides,
+        const FString& ToolId)
+    {
+        for (const FSofaToolIntegrationOverride& It : Overrides.Tools)
+        {
+            if (It.ToolId == ToolId)
             {
                 return &It;
             }
@@ -299,11 +327,23 @@ namespace
         {
             return false;
         }
+
+        const FString MechanicalObjectName = FindFirstComponentNameByType(NodeDef, TEXT("MechanicalObject"));
+
         return
-            !FindFirstComponentNameByType(NodeDef, TEXT("MechanicalObject")).IsEmpty() ||
+            (!MechanicalObjectName.IsEmpty() && MechanicalObjectName != TEXT("controlMO")) ||
             !FindFirstTopologyContainerName(NodeDef).IsEmpty() ||
             FindChildNodeByName(NodeDef, TEXT("Surface")) != nullptr ||
             FindChildNodeByName(NodeDef, TEXT("Visual")) != nullptr;
+    }
+
+    static bool IsRuntimeToolNode(const FSofaNodeDefinition& NodeDef)
+    {
+        if (IsTechnicalRepresentationNode(NodeDef))
+        {
+            return false;
+        }
+        return FindFirstComponentNameByType(NodeDef, TEXT("MechanicalObject")) == TEXT("controlMO");
     }
 
     static ESofaRuntimeObjectRole InferRuntimeObjectRole(
@@ -367,49 +407,94 @@ namespace
     {
         FSofaRuntimeObjectDescriptor RuntimeObject;
 
-        RuntimeObject.ObjectId = NodeDef.Name;
-        RuntimeObject.SimulationNodeName = NodeDef.Name;
+        RuntimeObject.ObjectNodeName = NodeDef.Name;
+        RuntimeObject.MechanicalObjectName = FindFirstComponentNameByType(NodeDef, TEXT("MechanicalObject"));
+        RuntimeObject.TopologyContainerName = FindFirstTopologyContainerName(NodeDef);
 
-        RuntimeObject.MechanicalObjectName =
-            FindFirstComponentNameByType(NodeDef, TEXT("MechanicalObject"));
+        const FSofaNodeDefinition* SurfaceNode = FindChildNodeByName(NodeDef, TEXT("Surface"));
+        const FSofaNodeDefinition* VisualNode = FindChildNodeByName(NodeDef, TEXT("Visual"));
+        const FSofaNodeDefinition* CollisionNode = FindChildNodeByName(NodeDef, TEXT("Collision"));
 
-        RuntimeObject.TopologyContainerName =
-            FindFirstTopologyContainerName(NodeDef);
-
-        if (const FSofaNodeDefinition* SurfaceNode = FindChildNodeByName(NodeDef, TEXT("Surface")))
-        {
-            RuntimeObject.SurfaceNodeName = SurfaceNode->Name;
-            RuntimeObject.SurfaceTopologyName = FindFirstTopologyContainerName(*SurfaceNode);
-        }
-
-        if (const FSofaNodeDefinition* VisualNode = FindChildNodeByName(NodeDef, TEXT("Visual")))
-        {
-            RuntimeObject.VisualNodeName = VisualNode->Name;
-            RuntimeObject.VisualMechanicalObjectName =
-                FindFirstComponentNameByType(*VisualNode, TEXT("MechanicalObject"));
-            RuntimeObject.VisualTopologyName =
-                FindFirstTopologyContainerName(*VisualNode);
-        }
-
-        if (const FSofaObjectIntegrationOverride* Override =
-            FindObjectOverride(IntegrationOverrides, RuntimeObject.ObjectId))
+        if (const FSofaObjectIntegrationOverride* Override = FindObjectOverride(IntegrationOverrides, RuntimeObject.ObjectNodeName))
         {
             RuntimeObject.VisualMaterialPath = Override->VisualMaterialPath;
             RuntimeObject.SofaScale = Override->SofaScale;
-            RuntimeObject.UnrealObjectTransform =
-                FTransform(Override->UnrealRotation, Override->UnrealTranslation, FVector::OneVector);
+            RuntimeObject.UnrealAnchorTransform = FTransform(Override->UnrealRotation, Override->UnrealTranslation, FVector::OneVector);
             RuntimeObject.bPreferVisualSurface = Override->bPreferVisualSurface;
             RuntimeObject.Role = Override->Role;
+
+            const FString SurfaceNodeNameFromOverride = FindNodeRefName(Override->NodeRefs, ESofaNodeRefRole::Surface);
+            if (!SurfaceNodeNameFromOverride.IsEmpty())
+            {
+                if (const FSofaNodeDefinition* OverrideSurfaceNode =
+                    FindChildNodeByName(NodeDef, SurfaceNodeNameFromOverride))
+                {
+                    SurfaceNode = OverrideSurfaceNode;
+                }
+            }
+            const FString VisualNodeNameFromOverride = FindNodeRefName(Override->NodeRefs, ESofaNodeRefRole::Visual);
+            if (!VisualNodeNameFromOverride.IsEmpty())
+            {
+                if (const FSofaNodeDefinition* OverrideVisualNode =
+                    FindChildNodeByName(NodeDef, VisualNodeNameFromOverride))
+                {
+                    VisualNode = OverrideVisualNode;
+                }
+            }
+            const FString CollisionNodeNameFromOverride = FindNodeRefName(Override->NodeRefs, ESofaNodeRefRole::Collision);
+            if (!CollisionNodeNameFromOverride.IsEmpty())
+            {
+                if (const FSofaNodeDefinition* OverrideCollisionNode =
+                    FindChildNodeByName(NodeDef, CollisionNodeNameFromOverride))
+                {
+                    CollisionNode = OverrideCollisionNode;
+                }
+            }
         }
         else
         {
             RuntimeObject.VisualMaterialPath.Reset();
             RuntimeObject.SofaScale = 10.0f;
-            RuntimeObject.UnrealObjectTransform = FTransform::Identity;
+            RuntimeObject.UnrealAnchorTransform = FTransform::Identity;
             RuntimeObject.bPreferVisualSurface = true;
+        }
+        if (SurfaceNode)
+        {
+            RuntimeObject.SurfaceNodeName = SurfaceNode->Name;
+            RuntimeObject.SurfaceTopologyName = FindFirstTopologyContainerName(*SurfaceNode);
+        }
+
+        if (VisualNode)
+        {
+            RuntimeObject.VisualNodeName = VisualNode->Name;
+            RuntimeObject.VisualMechanicalObjectName = FindFirstComponentNameByType(*VisualNode, TEXT("MechanicalObject"));
+            RuntimeObject.VisualTopologyName = FindFirstTopologyContainerName(*VisualNode);
         }
 
         return RuntimeObject;
+    }
+
+    static FSofaRuntimeToolDescriptor MakeRuntimeToolDescriptor(
+        const FSofaNodeDefinition& NodeDef,
+        const FSofaSceneIntegrationOverrides& IntegrationOverrides)
+    {
+        FSofaRuntimeToolDescriptor RuntimeTool;
+
+        RuntimeTool.ToolNodeName = FName(NodeDef.Name);
+        RuntimeTool.ControlMechanicalObjectName = FName(FindFirstComponentNameByType(NodeDef, TEXT("MechanicalObject")));
+
+        if (const FSofaToolIntegrationOverride* Override = FindToolOverride(IntegrationOverrides, NodeDef.Name))
+        {
+            RuntimeTool.UnrealAnchorTransform = FTransform(Override->UnrealRotation, Override->UnrealTranslation, FVector::OneVector);
+            RuntimeTool.SofaScale = FMath::IsNearlyZero(Override->SofaScale) ? 10.0f : Override->SofaScale;
+            RuntimeTool.bVisible = Override->bVisible;
+        }
+        else {
+            RuntimeTool.UnrealAnchorTransform = FTransform::Identity;
+            RuntimeTool.SofaScale = 10.0f;
+            RuntimeTool.bVisible = true;
+        }
+        return RuntimeTool;
     }
 
     static void CollectRuntimeObjectsFromNodeRecursive(
@@ -419,16 +504,27 @@ namespace
     {
         if (IsRuntimeObjectNode(NodeDef))
         {
-            OutRuntimeObjects.Add(
-                MakeRuntimeObjectDescriptor(NodeDef, IntegrationOverrides));
+            OutRuntimeObjects.Add(MakeRuntimeObjectDescriptor(NodeDef, IntegrationOverrides));
         }
 
         for (const FSofaNodeDefinition& ChildNode : NodeDef.Children)
         {
-            CollectRuntimeObjectsFromNodeRecursive(
-                ChildNode,
-                IntegrationOverrides,
-                OutRuntimeObjects);
+            CollectRuntimeObjectsFromNodeRecursive(ChildNode, IntegrationOverrides, OutRuntimeObjects);
+        }
+    }
+
+    static void CollectRuntimeToolsFromNodeRecursive(
+        const FSofaNodeDefinition& NodeDef,
+        const FSofaSceneIntegrationOverrides& IntegrationOverrides,
+        TArray<FSofaRuntimeToolDescriptor>& OutRuntimeTools)
+    {
+        if (IsRuntimeToolNode(NodeDef))
+        {
+            OutRuntimeTools.Add(MakeRuntimeToolDescriptor(NodeDef, IntegrationOverrides));
+        }
+        for (const FSofaNodeDefinition& ChildNode : NodeDef.Children)
+        {
+            CollectRuntimeToolsFromNodeRecursive(ChildNode, IntegrationOverrides, OutRuntimeTools);
         }
     }
 #endif
@@ -550,13 +646,17 @@ FSofaSceneBuilder::FBuildResult FSofaSceneBuilder::BuildPrototypeScene(
     NodeSPtr SimulationNode;
     {
         FString BuildError;
-        if (!BuildNodeRecursive(Root, SceneDef.RootNode, SimulationNode, BuildError))
+        for (const FSofaNodeDefinition& ChildNodeDef : SceneDef.RootNode.Children)
         {
-            Result.ErrorMessage = FString::Printf(
-                TEXT("Failed to build simulation node '%s': %s"),
-                *SceneDef.RootNode.Name,
-                *BuildError);
-            return Result;
+            NodeSPtr BuiltChildNode;
+            if (!BuildNodeRecursive(Root, ChildNodeDef, BuiltChildNode, BuildError))
+            {
+                Result.ErrorMessage = FString::Printf(
+                    TEXT("Failed to build top-level simulation node '%s': %s"),
+                    *ChildNodeDef.Name,
+                    *BuildError);
+                return Result;
+            }
         }
     }
 
@@ -572,32 +672,6 @@ FSofaSceneBuilder::FBuildResult FSofaSceneBuilder::BuildPrototypeScene(
             return Result;
         }
     }
-
-    Node* RootRaw = Root.get();
-    Node* MainNode = RootRaw ? RootRaw->getChild(TCHAR_TO_UTF8(*SceneDef.RootNode.Name)) : nullptr;
-
-    UE_LOG(LogSofaSceneBuilder, Warning, TEXT("Post-initRoot debug begin"));
-    UE_LOG(LogSofaSceneBuilder, Warning, TEXT("Main simulation node name=%s ptr=%p"), *SceneDef.RootNode.Name, MainNode);
-
-    if (MainNode)
-    {
-        if (auto* LoaderObj = MainNode->getObject("loader"))
-        {
-            UE_LOG(LogSofaSceneBuilder, Warning, TEXT("Found object 'loader'"));
-        }
-
-        if (auto* TopoObj = MainNode->getObject("topo"))
-        {
-            UE_LOG(LogSofaSceneBuilder, Warning, TEXT("Found object 'topo'"));
-        }
-
-        if (auto* MStateObj = MainNode->getObject("mstate"))
-        {
-            UE_LOG(LogSofaSceneBuilder, Warning, TEXT("Found object 'mstate'"));
-        }
-    }
-
-    UE_LOG(LogSofaSceneBuilder, Warning, TEXT("Post-initRoot debug end"));
 
     FSofaSceneIntegrationOverrides IntegrationOverrides;
     {
@@ -628,10 +702,24 @@ FSofaSceneBuilder::FBuildResult FSofaSceneBuilder::BuildPrototypeScene(
     SofaContext.SimulationPtr = Simu;
 
     SofaContext.RuntimeObjects.Reset();
+    SofaContext.RuntimeTools.Reset();
     CollectRuntimeObjectsFromNodeRecursive(SceneDef.RootNode, IntegrationOverrides, SofaContext.RuntimeObjects);
+    CollectRuntimeToolsFromNodeRecursive(SceneDef.RootNode, IntegrationOverrides, SofaContext.RuntimeTools);
     SofaContext.RootNode = Root;
     SofaContext.LoadedScenePath = SceneDef.SourceFilePath;
     SofaContext.SceneName = SceneDef.RootNode.Name;
+
+    
+    /*
+    //Temp
+    FSofaRuntimeToolDescriptor ToolDesc;
+    ToolDesc.ToolNodeName = TEXT("PrimaryTool");
+    ToolDesc.ControlMechanicalObjectName = TEXT("controlMO");
+    ToolDesc.UnrealAnchorTransform = FTransform::Identity;
+    ToolDesc.SofaScale = 10.0f;
+    ToolDesc.bVisible = true;
+    SofaContext.RuntimeTools.Add(MoveTemp(ToolDesc));
+    //Te*/
 
     Result.bSuccess = true;
     return Result;

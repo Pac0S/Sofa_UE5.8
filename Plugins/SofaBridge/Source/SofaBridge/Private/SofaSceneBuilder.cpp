@@ -59,6 +59,42 @@ namespace
         return true;
     }
 
+    static FString MakeNodePath(const FString& ParentPath, const FString& NodeName)
+    {
+        return ParentPath.IsEmpty() ? NodeName : (ParentPath + TEXT("/") + NodeName);
+    }
+
+    static FString MakeObjectKey(const FString& NodePath, const FString& ObjectName)
+    {
+        return NodePath + TEXT("::") + ObjectName;
+    }
+
+    static void RegisterBuiltObject(
+        FSofaRuntimeScene& Scene,
+        const FString& NodePath,
+        const FString& ObjectName,
+        const FString& ClassName)
+    {
+        if (ObjectName.IsEmpty())
+        {
+            UE_LOG(LogSofaSceneBuilder, Warning,
+                TEXT("[INDEX OBJ] Skip unnamed object | NodePath=%s Class=%s"),
+                *NodePath,
+                *ClassName);
+            return;
+        }
+
+        FSofaIndexedObject Entry;
+        Entry.NodePath = NodePath;
+        Entry.ObjectName = ObjectName;
+        Entry.ObjectKey = MakeObjectKey(NodePath, ObjectName);
+        Entry.ClassName = ClassName;
+        Entry.Generation = Scene.SceneGeneration;
+
+        Scene.ObjectKeysByName.Add(ObjectName, Entry.ObjectKey);
+        Scene.ObjectIndexByKey.Add(Entry.ObjectKey, MoveTemp(Entry));
+    }
+
     void ApplyGlobalSceneAttributes(
         const FSofaSceneDefinition& SceneDef,
         const sofa::simulation::NodeSPtr& RootNode)
@@ -111,7 +147,7 @@ namespace
     }
 
     static bool CreateAndAddObjectToNode(
-        const sofa::simulation::NodeSPtr& ParentNode,
+        const sofa::simulation::Node::SPtr& ParentNode,
         const std::string& ObjectClass,
         const std::map<std::string, std::string>& Params,
         FString& OutError)
@@ -132,10 +168,6 @@ namespace
             OutError = FString::Printf(TEXT("Failed to create object '%s' in parent node '%s'"), *ObjectClassFString, *ParentNodeName);
             return false;
         }
-        if (!AddObjectToNode(ParentNode, Object, OutError))
-        {
-            return false;
-        }
 
         FString ObjectName(Object->getName().c_str());
         UE_LOG(LogSofaSceneBuilder, Log, TEXT("Object %s (%s) successfully added to parent %s"), *ObjectClassFString, *ObjectName, *ParentNodeName);
@@ -143,10 +175,21 @@ namespace
     }
 
     bool BuildComponentOnNode(
-        const sofa::simulation::NodeSPtr& Node,
+        const sofa::simulation::Node::SPtr& Node,
         const FSofaComponentDefinition& ComponentDef,
         FString& OutError)
     {
+        if (!Node)
+        {
+            OutError = TEXT("BuildComponentOnNode: Node is null");
+            UE_LOG(LogTemp, Error,
+                TEXT("[BUILD COMPONENT] Abort | Node is null | Type=%s"),
+                *ComponentDef.Type);
+            return false;
+        }
+
+        const FString NodeName = UTF8_TO_TCHAR(Node->getName().c_str());
+
         std::map<std::string, std::string> SofaParams;
 
         for (const TPair<FString, FString>& Pair : ComponentDef.Attributes)
@@ -156,62 +199,118 @@ namespace
                 TCHAR_TO_UTF8(*Pair.Value));
         }
 
-        return CreateAndAddObjectToNode(
+        const bool bOk = CreateAndAddObjectToNode(
             Node,
             TCHAR_TO_UTF8(*ComponentDef.Type),
             SofaParams,
             OutError);
+
+        return bOk;
     }
 
     bool BuildGlobalRootComponents(
+        FSofaRuntimeScene& Scene,
         const FSofaSceneDefinition& SceneDef,
-        const sofa::simulation::NodeSPtr& RootNode,
+        const sofa::simulation::Node::SPtr& RootNode,
         FString& OutError)
     {
+        if (!RootNode)
+        {
+            OutError = TEXT("BuildGlobalRootComponents: RootNode is null");
+            UE_LOG(LogSofaSceneBuilder, Error, TEXT("[BUILD ROOT COMPONENTS] Abort | RootNode is null"));
+            return false;
+        }
+
+        const FString RootPath = TEXT("root");
+
         for (const FSofaComponentDefinition& ComponentDef : SceneDef.GlobalRootComponents)
         {
             if (!BuildComponentOnNode(RootNode, ComponentDef, OutError))
             {
+                UE_LOG(LogSofaSceneBuilder, Error,
+                    TEXT("[BUILD ROOT COMPONENTS] Failed | Component=%s Type=%s Error=%s"),
+                    *ComponentDef.Name,
+                    *ComponentDef.Type,
+                    *OutError);
                 return false;
             }
+
+            RegisterBuiltObject(Scene, RootPath, ComponentDef.Name, ComponentDef.Type);
         }
 
         return true;
     }
 
     bool BuildNodeRecursive(
-        const sofa::simulation::NodeSPtr& ParentNode,
+        FSofaRuntimeScene& Scene,
+        const sofa::simulation::Node::SPtr& ParentNode,
+        const FString& ParentPath,
         const FSofaNodeDefinition& NodeDef,
-        sofa::simulation::NodeSPtr& OutNode,
         FString& OutError)
     {
         if (!ParentNode)
         {
             OutError = TEXT("Invalid parent node");
+            UE_LOG(LogTemp, Error,
+                TEXT("[BUILD NODE] Abort | ParentNode is null | NodeDef=%s"),
+                *NodeDef.Name);
             return false;
         }
 
         const FString SafeName = NodeDef.Name.IsEmpty() ? TEXT("Node") : NodeDef.Name;
-        OutNode = ParentNode->createChild(TCHAR_TO_UTF8(*SafeName));
 
-        if (!OutNode)
+        if (NodeDef.Name.IsEmpty()) {
+            UE_LOG(LogSofaSceneBuilder, Warning, TEXT("Child node of %s is empty. 'Node' given as default name"), *ParentPath);
+        }
+
+        sofa::simulation::Node::SPtr ChildNode = ParentNode->createChild(TCHAR_TO_UTF8(*SafeName));
+
+        if (!ChildNode)
         {
             OutError = FString::Printf(TEXT("Failed to create child node '%s'"), *SafeName);
+            UE_LOG(LogSofaSceneBuilder, Error,
+                TEXT("[BUILD NODE] Failed | %s"),
+                *OutError);
             return false;
         }
 
-        for (const FSofaComponentDefinition& ComponentDef : NodeDef.Components)
+        const FString NodePath = MakeNodePath(ParentPath, SafeName);
+
         {
-            if (!BuildComponentOnNode(OutNode, ComponentDef, OutError))
-            {
-                return false;
-            }
+            FSofaIndexedNode IndexedNode;
+            IndexedNode.Path = NodePath;
+            IndexedNode.Name = SafeName;
+            IndexedNode.Generation = Scene.SceneGeneration;
+
+            Scene.NodeIndexByPath.Add(NodePath, MoveTemp(IndexedNode));
         }
 
-        for (const FSofaNodeDefinition& ChildDef : NodeDef.Children)
+        UE_LOG(LogSofaSceneBuilder, Log, TEXT("Node created : %s"), *NodePath);
+
+        for (int32 ComponentIndex = 0; ComponentIndex < NodeDef.Components.Num(); ++ComponentIndex)
         {
-            sofa::simulation::NodeSPtr ChildNode;
-            if (!BuildNodeRecursive(OutNode, ChildDef, ChildNode, OutError))
+            const FSofaComponentDefinition& ComponentDef = NodeDef.Components[ComponentIndex];
+
+            sofa::core::objectmodel::BaseObject::SPtr BuiltObject;
+
+            if (!BuildComponentOnNode(ChildNode, ComponentDef, OutError))
+            {
+                UE_LOG(LogSofaSceneBuilder, Error,
+                    TEXT("[BUILD NODE] Component failed | Node=%s Component=%s Error=%s"),
+                    *NodePath,
+                    *ComponentDef.Name,
+                    *OutError);
+                return false;
+            }
+
+            RegisterBuiltObject(Scene, NodePath, ComponentDef.Name, ComponentDef.Type);
+        }
+
+        for (int32 ChildDefIndex = 0; ChildDefIndex < NodeDef.Children.Num(); ++ChildDefIndex)
+        {
+            const FSofaNodeDefinition& ChildDef = NodeDef.Children[ChildDefIndex];
+
+            if (!BuildNodeRecursive(Scene, ChildNode, NodePath, ChildDef, OutError))
             {
                 return false;
             }
@@ -219,6 +318,7 @@ namespace
 
         return true;
     }
+
 
     static FString FindNodeRefName(
         const TArray<FSofaNodeRef>& NodeRefs,
@@ -238,8 +338,10 @@ namespace
         const FSofaSceneIntegrationOverrides& Overrides,
         const FString& ObjectId)
     {
+        UE_LOG(LogTemp, Log, TEXT("Checking overrides for node %s"), *ObjectId);
         for (const FSofaObjectIntegrationOverride& It : Overrides.Objects)
         {
+            UE_LOG(LogTemp, Log, TEXT("Override ID : %s, Node id : %s"), *It.ObjectId, *ObjectId);
             if (It.ObjectId == ObjectId)
             {
                 return &It;
@@ -314,36 +416,24 @@ namespace
         return nullptr;
     }
 
-    static bool IsTechnicalRepresentationNode(const FSofaNodeDefinition& NodeDef)
+    static bool IsObjectRootNodeName(const FString& Name)
     {
-        return NodeDef.Name == TEXT("Visual") ||
-            NodeDef.Name == TEXT("Surface") ||
-            NodeDef.Name == TEXT("Collision");
+        return Name.StartsWith(TEXT("OBJ_"), ESearchCase::CaseSensitive);
     }
 
-    static bool IsRuntimeObjectNode(const FSofaNodeDefinition& NodeDef)
+    static bool IsToolRootNodeName(const FString& Name)
     {
-        if (IsTechnicalRepresentationNode(NodeDef))
-        {
-            return false;
-        }
-
-        const FString MechanicalObjectName = FindFirstComponentNameByType(NodeDef, TEXT("MechanicalObject"));
-
-        return
-            (!MechanicalObjectName.IsEmpty() && MechanicalObjectName != TEXT("controlMO")) ||
-            !FindFirstTopologyContainerName(NodeDef).IsEmpty() ||
-            FindChildNodeByName(NodeDef, TEXT("Surface")) != nullptr ||
-            FindChildNodeByName(NodeDef, TEXT("Visual")) != nullptr;
+        return Name.StartsWith(TEXT("TOOL_"), ESearchCase::CaseSensitive);
     }
 
     static bool IsRuntimeToolNode(const FSofaNodeDefinition& NodeDef)
     {
-        if (IsTechnicalRepresentationNode(NodeDef))
-        {
-            return false;
-        }
-        return FindFirstComponentNameByType(NodeDef, TEXT("MechanicalObject")) == TEXT("controlMO");
+        return IsToolRootNodeName(NodeDef.Name);
+    }
+
+    static bool IsRuntimeObjectNode(const FSofaNodeDefinition& NodeDef)
+    {
+        return IsObjectRootNodeName(NodeDef.Name);
     }
 
     static ESofaRuntimeObjectRole InferRuntimeObjectRole(
@@ -411,9 +501,13 @@ namespace
         RuntimeObject.MechanicalObjectName = FindFirstComponentNameByType(NodeDef, TEXT("MechanicalObject"));
         RuntimeObject.TopologyContainerName = FindFirstTopologyContainerName(NodeDef);
 
+        
+
         const FSofaNodeDefinition* SurfaceNode = FindChildNodeByName(NodeDef, TEXT("Surface"));
         const FSofaNodeDefinition* VisualNode = FindChildNodeByName(NodeDef, TEXT("Visual"));
         const FSofaNodeDefinition* CollisionNode = FindChildNodeByName(NodeDef, TEXT("Collision"));
+
+        
 
         if (const FSofaObjectIntegrationOverride* Override = FindObjectOverride(IntegrationOverrides, RuntimeObject.ObjectNodeName))
         {
@@ -483,8 +577,19 @@ namespace
         RuntimeTool.ToolNodeName = FName(NodeDef.Name);
         RuntimeTool.ControlMechanicalObjectName = FName(FindFirstComponentNameByType(NodeDef, TEXT("MechanicalObject")));
 
+        const FSofaNodeDefinition* CollisionNode = FindChildNodeByName(NodeDef, TEXT("PrimaryToolCollision"));
+
         if (const FSofaToolIntegrationOverride* Override = FindToolOverride(IntegrationOverrides, NodeDef.Name))
         {
+            const FString CollisionNodeNameFromOverride = FindNodeRefName(Override->NodeRefs, ESofaNodeRefRole::Collision);
+            if (!CollisionNodeNameFromOverride.IsEmpty())
+            {
+                if (const FSofaNodeDefinition* OverrideCollisionNode =
+                    FindChildNodeByName(NodeDef, CollisionNodeNameFromOverride))
+                {
+                    CollisionNode = OverrideCollisionNode;
+                }
+            }
             RuntimeTool.UnrealAnchorTransform = FTransform(Override->UnrealRotation, Override->UnrealTranslation, FVector::OneVector);
             RuntimeTool.SofaScale = FMath::IsNearlyZero(Override->SofaScale) ? 10.0f : Override->SofaScale;
             RuntimeTool.bVisible = Override->bVisible;
@@ -526,6 +631,138 @@ namespace
         {
             CollectRuntimeToolsFromNodeRecursive(ChildNode, IntegrationOverrides, OutRuntimeTools);
         }
+    }
+
+    static void DumpNodeTreeFromIndex(const FSofaRuntimeScene& Scene)
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[DUMP TREE] Begin indexed dump | SceneGeneration=%llu IndexedNodeCount=%d"),
+            Scene.SceneGeneration,
+            Scene.NodeIndexByPath.Num());
+
+        if (Scene.NodeIndexByPath.Num() == 0)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[DUMP TREE] <empty node index>"));
+            return;
+        }
+
+        TArray<const FSofaIndexedNode*> IndexedNodes;
+        IndexedNodes.Reserve(Scene.NodeIndexByPath.Num());
+
+        for (const TPair<FString, FSofaIndexedNode>& Pair : Scene.NodeIndexByPath)
+        {
+            const FSofaIndexedNode& IndexedNode = Pair.Value;
+
+            if (IndexedNode.Generation != Scene.SceneGeneration)
+            {
+                continue;
+            }
+
+            IndexedNodes.Add(&IndexedNode);
+        }
+
+        IndexedNodes.Sort([](const FSofaIndexedNode& A, const FSofaIndexedNode& B)
+            {
+                return A.Path < B.Path;
+            });
+
+        for (const FSofaIndexedNode* IndexedNode : IndexedNodes)
+        {
+            if (!IndexedNode)
+            {
+                continue;
+            }
+
+            FString Path = IndexedNode->Path;
+            TArray<FString> Segments;
+            Path.ParseIntoArray(Segments, TEXT("/"), true);
+
+            const int32 Depth = FMath::Max(0, Segments.Num() - 1);
+            const FString Indent = FString::ChrN(Depth * 2, TCHAR(' '));
+
+            FString ParentPath;
+
+            if (Segments.Num() > 1)
+            {
+                TArray<FString> ParentSegments = Segments;
+                ParentSegments.Pop(); // retire le dernier segment
+                ParentPath = FString::Join(ParentSegments, TEXT("/"));
+            }
+
+            int32 ChildCount = 0;
+            for (const TPair<FString, FSofaIndexedNode>& OtherPair : Scene.NodeIndexByPath)
+            {
+                const FSofaIndexedNode& OtherNode = OtherPair.Value;
+
+                if (OtherNode.Generation != Scene.SceneGeneration)
+                {
+                    continue;
+                }
+
+                if (OtherNode.Path == IndexedNode->Path)
+                {
+                    continue;
+                }
+
+                TArray<FString> OtherSegments;
+                OtherNode.Path.ParseIntoArray(OtherSegments, TEXT("/"), true);
+
+                if (OtherSegments.Num() != Segments.Num() + 1)
+                {
+                    continue;
+                }
+
+                FString OtherParentPath;
+
+                if (OtherSegments.Num() > 1)
+                {
+                    const int32 LastSlashIndex = OtherNode.Path.Find(TEXT("/"), ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+
+                    if (LastSlashIndex != INDEX_NONE)
+                    {
+                        OtherParentPath = OtherNode.Path.Left(LastSlashIndex);
+                    }
+                }
+
+                if (OtherParentPath == IndexedNode->Path)
+                {
+                    ++ChildCount;
+                }
+            }
+
+            UE_LOG(LogTemp, Warning,
+                TEXT("[DUMP TREE] %sNode='%s' Path='%s' Depth=%d Parent='%s' ChildCount=%d"),
+                *Indent,
+                *IndexedNode->Name,
+                *IndexedNode->Path,
+                Depth,
+                ParentPath.IsEmpty() ? TEXT("<none>") : *ParentPath,
+                ChildCount);
+
+            for (const TPair<FString, FSofaIndexedObject>& ObjectPair : Scene.ObjectIndexByKey)
+            {
+                const FSofaIndexedObject& IndexedObject = ObjectPair.Value;
+
+                if (IndexedObject.Generation != Scene.SceneGeneration)
+                {
+                    continue;
+                }
+
+                if (IndexedObject.NodePath != IndexedNode->Path)
+                {
+                    continue;
+                }
+
+                UE_LOG(LogTemp, Warning,
+                    TEXT("[DUMP TREE] %s  Object='%s' Class='%s' Key='%s'"),
+                    *Indent,
+                    *IndexedObject.ObjectName,
+                    *IndexedObject.ClassName,
+                    *IndexedObject.ObjectKey);
+            }
+        }
+
+        UE_LOG(LogTemp, Warning, TEXT("[DUMP TREE] End indexed dump"));
     }
 #endif
 }
@@ -598,26 +835,10 @@ FSofaSceneBuilder::FBuildResult FSofaSceneBuilder::BuildPrototypeScene(
         return Result;
     }
 
-    Root->setName("UE5Root");
+    Root->setName("root");
     Root->setAnimate(true);
 
     ApplyGlobalSceneAttributes(SceneDef, Root);
-
-    if (SceneDef.GlobalRootAttributes.Contains(TEXT("name")))
-    {
-        const FString& RootName = SceneDef.GlobalRootAttributes[TEXT("name")];
-        UE_LOG(LogSofaSceneBuilder, Log, TEXT("Applied root name from scene: %s"), *RootName);
-    }
-
-    if (SceneDef.GlobalRootAttributes.Contains(TEXT("dt")))
-    {
-        UE_LOG(LogSofaSceneBuilder, Log, TEXT("Applied dt from scene: %s"), *SceneDef.GlobalRootAttributes[TEXT("dt")]);
-    }
-
-    if (SceneDef.GlobalRootAttributes.Contains(TEXT("gravity")))
-    {
-        UE_LOG(LogSofaSceneBuilder, Log, TEXT("Applied gravity from scene: %s"), *SceneDef.GlobalRootAttributes[TEXT("gravity")]);
-    }
 
     for (const FString& PluginName : SceneDef.RequiredPlugins)
     {
@@ -632,9 +853,30 @@ FSofaSceneBuilder::FBuildResult FSofaSceneBuilder::BuildPrototypeScene(
             bImported ? TEXT("Success") : TEXT("Failure"));
     }
 
+    SofaContext.SimulationPtr = Simu;
+    SofaContext.RootNode = Root;
+    SofaContext.LoadedScenePath = SceneDef.SourceFilePath;
+    SofaContext.SceneName = Request.bUseSceneFilePath ? FPaths::GetBaseFilename(Request.SceneFilePath) : Request.SceneName;
+    ++SofaContext.SceneGeneration;
+
+    SofaContext.RuntimeObjects.Reset();
+    SofaContext.RuntimeTools.Reset();
+    SofaContext.Bindings.Reset();
+    SofaContext.NodeIndexByPath.Reset();
+    SofaContext.ObjectIndexByKey.Reset();
+    SofaContext.ObjectKeysByName.Reset();
+
+    {
+        FSofaIndexedNode RootEntry;
+        RootEntry.Path = TEXT("root");
+        RootEntry.Name = TEXT("root");
+        RootEntry.Generation = SofaContext.SceneGeneration;
+        SofaContext.NodeIndexByPath.Add(RootEntry.Path, MoveTemp(RootEntry));
+    }
+
     {
         FString RootComponentsError;
-        if (!BuildGlobalRootComponents(SceneDef, Root, RootComponentsError))
+        if (!BuildGlobalRootComponents(SofaContext, SceneDef, Root, RootComponentsError))
         {
             Result.ErrorMessage = FString::Printf(
                 TEXT("Failed to build root-level components: %s"),
@@ -643,13 +885,13 @@ FSofaSceneBuilder::FBuildResult FSofaSceneBuilder::BuildPrototypeScene(
         }
     }
 
-    NodeSPtr SimulationNode;
     {
         FString BuildError;
+        const FString RootPath = TEXT("root");
+
         for (const FSofaNodeDefinition& ChildNodeDef : SceneDef.RootNode.Children)
         {
-            NodeSPtr BuiltChildNode;
-            if (!BuildNodeRecursive(Root, ChildNodeDef, BuiltChildNode, BuildError))
+            if (!BuildNodeRecursive(SofaContext, Root, RootPath, ChildNodeDef, BuildError))
             {
                 Result.ErrorMessage = FString::Printf(
                     TEXT("Failed to build top-level simulation node '%s': %s"),
@@ -659,6 +901,10 @@ FSofaSceneBuilder::FBuildResult FSofaSceneBuilder::BuildPrototypeScene(
             }
         }
     }
+
+    UE_LOG(LogTemp, Warning, TEXT("[SOFA TREE] ===== BEGIN DUMP ====="));
+    DumpNodeTreeFromIndex(SofaContext);
+    UE_LOG(LogTemp, Warning, TEXT("[SOFA TREE] ===== END DUMP ====="));
 
     {
         try
@@ -699,27 +945,8 @@ FSofaSceneBuilder::FBuildResult FSofaSceneBuilder::BuildPrototypeScene(
         }
     }
 
-    SofaContext.SimulationPtr = Simu;
-
-    SofaContext.RuntimeObjects.Reset();
-    SofaContext.RuntimeTools.Reset();
     CollectRuntimeObjectsFromNodeRecursive(SceneDef.RootNode, IntegrationOverrides, SofaContext.RuntimeObjects);
     CollectRuntimeToolsFromNodeRecursive(SceneDef.RootNode, IntegrationOverrides, SofaContext.RuntimeTools);
-    SofaContext.RootNode = Root;
-    SofaContext.LoadedScenePath = SceneDef.SourceFilePath;
-    SofaContext.SceneName = SceneDef.RootNode.Name;
-
-    
-    /*
-    //Temp
-    FSofaRuntimeToolDescriptor ToolDesc;
-    ToolDesc.ToolNodeName = TEXT("PrimaryTool");
-    ToolDesc.ControlMechanicalObjectName = TEXT("controlMO");
-    ToolDesc.UnrealAnchorTransform = FTransform::Identity;
-    ToolDesc.SofaScale = 10.0f;
-    ToolDesc.bVisible = true;
-    SofaContext.RuntimeTools.Add(MoveTemp(ToolDesc));
-    //Te*/
 
     Result.bSuccess = true;
     return Result;

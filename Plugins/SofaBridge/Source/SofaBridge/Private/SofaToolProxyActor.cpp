@@ -29,7 +29,7 @@ ASofaToolProxyActor::ASofaToolProxyActor()
     bDriveFromKeyboard = true;
     bFollowSnapshot = true;
     bDrawDebug = true;
-    DebugSphereRadius = 6.0f;
+    DebugSphereRadius = 3.0f;
     DebugAxisLength = 20.0f;
     DebugTextZOffset = 12.0f;
 
@@ -39,6 +39,10 @@ ASofaToolProxyActor::ASofaToolProxyActor()
 void ASofaToolProxyActor::BeginPlay()
 {
     Super::BeginPlay();
+
+    DesiredTransform = ToolWorldToLocalTransform(GetActorTransform());
+    InitialSpawnTransform = DesiredTransform;
+    SubmitCurrentToolInput();
 }
 
 void ASofaToolProxyActor::Tick(float DeltaSeconds)
@@ -126,10 +130,13 @@ void ASofaToolProxyActor::UpdateKeyboardControl(float DeltaSeconds)
     {
         MoveDir = MoveDir.GetSafeNormal();
 
-        const FVector OldLocation = GetActorLocation();
-        const FVector NewLocation = OldLocation + MoveDir * InputMoveSpeed * DeltaSeconds;
+        const FVector OldWorldLocation = GetActorLocation();
+        const FVector NewWorldLocation = OldWorldLocation + MoveDir * InputMoveSpeed * DeltaSeconds;
+        const FTransform NewWorldTransform = FTransform(GetActorRotation(), NewWorldLocation);
 
-        SetActorLocation(NewLocation);
+        FTransform NewLocalTransform = ToolWorldToLocalTransform(NewWorldTransform);
+
+        DesiredTransform.SetLocation(NewLocalTransform.GetLocation());
     }
 }
 
@@ -142,7 +149,7 @@ void ASofaToolProxyActor::SubmitCurrentToolInput()
 
     FSofaToolInputState Input;
     Input.ToolId = ToolId;
-    Input.TargetPose = GetActorTransform();
+    Input.TargetPose = DesiredTransform;
     Input.bEnabled = true;
     Input.Timestamp = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
 
@@ -181,8 +188,10 @@ void ASofaToolProxyActor::RefreshFromSnapshot()
             return;
         }
 
-        SetActorTransform(ToolState.WorldTransform);
-        LastSnapshotTransform = ToolState.WorldTransform;
+        FTransform ToolWorldTransform = ToolLocalToWorldTransform(ToolState.UnrealLocalToolTransform);
+
+        SetActorTransform(ToolWorldTransform);
+        LastSnapshotTransform = ToolState.UnrealLocalToolTransform;
         bHasSnapshotPose = true;
         return;
     }
@@ -199,46 +208,13 @@ void ASofaToolProxyActor::DrawToolDebug()
     const FVector Pos = GetActorLocation();
     const FTransform Xf = GetActorTransform();
 
-    DrawDebugSphere(
-        World,
-        Pos,
-        DebugSphereRadius,
-        12,
-        FColor::Green,
-        false,
-        0.0f,
-        0,
-        1.5f);
+    DrawDebugSphere(World, Pos, DebugSphereRadius, 12, FColor::Green, false, 0.0f, 0, 1.5f);
 
-    DrawDebugLine(
-        World,
-        Pos,
-        Pos + Xf.GetUnitAxis(EAxis::X) * DebugAxisLength,
-        FColor::Red,
-        false,
-        0.0f,
-        0,
-        1.5f);
+    DrawDebugLine(World, Pos, Pos + Xf.GetUnitAxis(EAxis::X) * DebugAxisLength, FColor::Red, false, 0.0f, 0, 1.5f);
 
-    DrawDebugLine(
-        World,
-        Pos,
-        Pos + Xf.GetUnitAxis(EAxis::Y) * DebugAxisLength,
-        FColor::Green,
-        false,
-        0.0f,
-        0,
-        1.5f);
+    DrawDebugLine(World, Pos, Pos + Xf.GetUnitAxis(EAxis::Y) * DebugAxisLength, FColor::Green, false, 0.0f, 0, 1.5f);
 
-    DrawDebugLine(
-        World,
-        Pos,
-        Pos + Xf.GetUnitAxis(EAxis::Z) * DebugAxisLength,
-        FColor::Blue,
-        false,
-        0.0f,
-        0,
-        1.5f);
+    DrawDebugLine(World, Pos, Pos + Xf.GetUnitAxis(EAxis::Z) * DebugAxisLength, FColor::Blue, false, 0.0f, 0, 1.5f);
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
     const FString DebugLabel = FString::Printf(
@@ -256,4 +232,14 @@ void ASofaToolProxyActor::DrawToolDebug()
         0.0f,
         false);
 #endif
+}
+
+FTransform ASofaToolProxyActor::ToolWorldToLocalTransform(FTransform WorldTransform)
+{
+    return InitialSpawnTransform.Inverse() * WorldTransform;
+}
+
+FTransform ASofaToolProxyActor::ToolLocalToWorldTransform(FTransform LocalTransform)
+{
+    return InitialSpawnTransform * LocalTransform;
 }

@@ -15,11 +15,10 @@ public:
 
     bool Start();
     void RequestStop();
+    void Wait();
 
     virtual bool Init() override;
     virtual uint32 Run() override;
-    virtual void Stop() override;
-    virtual void Exit() override;
 
 private:
     FSofaSimulationService* Owner = nullptr;

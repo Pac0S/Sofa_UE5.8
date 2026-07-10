@@ -1,0 +1,30 @@
+{
+  "objects": [
+    {
+      "objectId": "OBJ_Liver",
+	  "NodeRefs": [
+        { "Role": "Surface", "Name": "Surface"},
+        { "Role": "Visual", "Name": "Visual" },
+		{ "Role": "Collision", "Name": "Collision" }
+      ],
+      "visualMaterialPath": "C:/Users/Pakito/Documents/Projets/AniSim/sofa/src/share/mesh/liver.mtl",
+      "sofaScale": 10.0,
+      "unrealTranslation": { "x": 0.0, "y": 0.0,"z": 0.0 },
+      "unrealRotation": {"pitch": 0.0, "yaw": 0.0, "roll": 0.0},
+      "bPreferVisualSurface": true,
+      "role": "Organ"
+    }
+  ],
+  "tools": [
+    {
+      "toolId": "TOOL_Primary",
+	  "NodeRefs": [
+        { "Role": "Collision", "Name": "PrimaryToolCollision" }
+      ],
+      "sofaScale": 10.0,
+      "unrealTranslation": {"x": 0.0, "y": 0.0, "z": 0.0 },
+      "unrealRotation": {"pitch": 0.0, "yaw": 0.0, "roll": 0.0 },
+      "bVisible": true
+    }
+  ]
+}

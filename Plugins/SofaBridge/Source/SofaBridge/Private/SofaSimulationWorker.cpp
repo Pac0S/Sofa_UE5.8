@@ -36,6 +36,14 @@ void FSofaSimWorker::RequestStop()
     bStopRequested = true;
 }
 
+void FSofaSimWorker::Wait()
+{
+    if (Thread)
+    {
+        Thread->WaitForCompletion();
+    }
+}
+
 bool FSofaSimWorker::Init()
 {
     return Owner != nullptr;
@@ -61,13 +69,4 @@ uint32 FSofaSimWorker::Run()
     }
 
     return 0;
-}
-
-void FSofaSimWorker::Stop()
-{
-    bStopRequested = true;
-}
-
-void FSofaSimWorker::Exit()
-{
 }

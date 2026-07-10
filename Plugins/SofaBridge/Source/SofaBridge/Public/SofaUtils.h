@@ -6,6 +6,7 @@
 struct FSofaRuntimeScene;
 struct FSofaRuntimeObjectDescriptor;
 
+
 namespace SofaMaterialUtils
 {
     struct FSofaParsedMtl
@@ -53,38 +54,38 @@ namespace sofa::simulation
 {
     class Node;
 }
+struct FSofaResolvedBinding;
 
 namespace SofaSceneExtractor
 {
     bool ExtractMechanicalDebugPoints(
         const FSofaRuntimeScene& Scene,
         const FSofaRuntimeObjectDescriptor& RuntimeObj,
+        const FSofaResolvedBinding& MechanicalBinding,
         TArray<FSofaDebugPoint>& OutPoints,
         FString& OutError);
     
     bool ExtractMechanicalSurfaceDebugTriangles(
         const FSofaRuntimeScene& Scene,
-        const FSofaRuntimeObjectDescriptor& RuntimeObj,
+        const FSofaResolvedBinding& SurfaceBinding,
         TArray<FSofaDebugTriangle>& OutTriangles,
         FString& OutError);
 
     bool ExtractVisualSurfaceMesh(
         const FSofaRuntimeScene& Scene,
         const FSofaRuntimeObjectDescriptor& RuntimeObj,
+        const FSofaResolvedBinding& VisualBinding,
         FSofaSurfaceMeshState& OutMesh,
         FString& OutError);
 
     bool ExtractRenderableSurfaceMesh(
         const FSofaRuntimeScene& Scene,
         const FSofaRuntimeObjectDescriptor& RuntimeObj,
+        const FSofaResolvedBinding& Binding,
         FSofaObjectState& OutState,
         FString& OutError);
+}
 
-    sofa::simulation::Node* FindNodeByNameRecursive(
-        sofa::simulation::Node* StartNode,
-        const FString& TargetName);
-
-    sofa::simulation::Node* FindChildOrDescendantNodeByName(
-        sofa::simulation::Node* ParentNode,
-        const FString& TargetName);
+namespace SofaFinder
+{
 }

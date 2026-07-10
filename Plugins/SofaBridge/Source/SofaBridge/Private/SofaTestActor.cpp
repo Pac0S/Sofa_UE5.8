@@ -52,7 +52,7 @@ void ASofaTestActor::BeginPlay()
 
     //MaterialPath only exists after SofaSceneBuilder construction that is called through StartPrototypeSimulation.
     FString MaterialPath;
-    GetObjectMaterialPath(FName("Liver01"), MaterialPath);
+    GetObjectMaterialPath(FName(VisualizedObjectId), MaterialPath);
     ProceduralSurfaceComponent->SetMaterialPath(MaterialPath);
     ProceduralSurfaceComponent->InitializeMaterial();
 }
@@ -208,6 +208,8 @@ void ASofaTestActor::SpawnToolProxyIfNeeded()
     SpawnParams.Owner = this;
     SpawnParams.SpawnCollisionHandlingOverride =
         ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    UE_LOG(LogTemp, Log, TEXT("Spawning Proxy actor at position {%f, %f, %f}"), GetActorLocation().X, GetActorLocation().Y, GetActorLocation().Z);
 
     SpawnedToolProxy = GetWorld()->SpawnActor<ASofaToolProxyActor>(
         ClassToSpawn,

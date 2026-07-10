@@ -82,12 +82,20 @@ public class SofaSDK : ModuleRules
             "Sofa.Component.Constraint.Projective",
             "Sofa.Component.MechanicalLoad",
             "Sofa.Component.Mapping.Linear",
+            "Sofa.Component.Mapping.NonLinear",
             "Sofa.LinearAlgebra",
             "Sofa.Geometry",
             "Sofa.Component.Collision.Geometry",
+            "Sofa.Component.Constraint.Lagrangian.Model",
             "Sofa.Component.Constraint.Lagrangian.Correction",
+            "Sofa.Component.Constraint.Lagrangian.Solver",
+            "Sofa.Component.Collision.Detection.Algorithm",
+            "Sofa.Component.Collision.Detection.Intersection",
+            "Sofa.Component.Collision.Response.Contact",
+            "Sofa.Component.AnimationLoop",
             "tinyxml2"
         };
+
 
         foreach (string moduleName in SofaModules.Distinct())
         {

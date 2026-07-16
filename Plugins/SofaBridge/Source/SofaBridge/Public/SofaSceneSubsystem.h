@@ -46,6 +46,11 @@ public:
     UFUNCTION(BlueprintPure, Category = "SOFA|Simulation")
     FSofaPrototypeSceneRequest GetPrototypeSceneRequest() const;
 
+    UFUNCTION(BlueprintCallable, Category = "SOFA")
+    bool FindRuntimeToolDescriptor(FSofaRuntimeToolDescriptor& ToolDesc, FName ToolId) const;
+
+    UFUNCTION(BlueprintCallable, Category = "SOFA")
+    bool FindRuntimeObjectDescriptor(FSofaRuntimeObjectDescriptor& ObjectDesc, FName ObjectId) const;
 
     UFUNCTION(BlueprintCallable, Category="SOFA")
     bool TryGetLatestSnapshot(FSofaFrameSnapshot& OutSnapshot) const;
@@ -56,8 +61,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SOFA")
     bool SubmitToolInput(const FSofaToolInputState& Input);
 
-    /*UFUNCTION(BlueprintCallable, Category = "SOFA")
-    bool SubmitFrameInput(const FSofaFrameInput& Input);*/
+    bool GetStaticCollisionDebugPointsByMesh(TMap<FName, TArray<FSofaDebugPoint>>& OutPointsByMesh, FString& OutError);
 
 private:
     TUniquePtr<FSofaSimulationService> Service;

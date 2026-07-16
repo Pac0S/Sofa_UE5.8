@@ -40,8 +40,8 @@ void ASofaToolProxyActor::BeginPlay()
 {
     Super::BeginPlay();
 
-    DesiredTransform = ToolWorldToLocalTransform(GetActorTransform());
-    InitialSpawnTransform = DesiredTransform;
+    InitialSpawnTransform = GetActorTransform();
+    DesiredTransform = FTransform::Identity;
     SubmitCurrentToolInput();
 }
 

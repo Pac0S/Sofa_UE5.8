@@ -40,16 +40,13 @@ struct FSofaObjectIntegrationOverride
     FString VisualMaterialPath;
 
     UPROPERTY()
+    FString StaticMeshPath;
+
+    UPROPERTY()
     TArray<FSofaNodeRef> NodeRefs;
 
     UPROPERTY()
     float SofaScale = 10.0f;
-
-    UPROPERTY()
-    FVector UnrealTranslation = FVector::ZeroVector;
-
-    UPROPERTY()
-    FRotator UnrealRotation = FRotator::ZeroRotator;
 
     UPROPERTY()
     bool bPreferVisualSurface = true;
@@ -71,12 +68,6 @@ struct FSofaToolIntegrationOverride
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite)
     float SofaScale = 1.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    FVector UnrealTranslation = FVector::ZeroVector;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    FRotator UnrealRotation = FRotator::ZeroRotator;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite)
     bool bVisible = true;

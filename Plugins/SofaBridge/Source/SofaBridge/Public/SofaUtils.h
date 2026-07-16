@@ -44,10 +44,10 @@ namespace SofaMaterialUtils
 
 namespace SofaCoordinateSystem 
 {
-    FVector SofaToUnrealPosition(const FVector& InSofaPosition,const FSofaRuntimeObjectDescriptor& RuntimeObj);
-    FVector UnrealToSofaPosition(const FVector& InUnrealPosition, const FSofaRuntimeObjectDescriptor& RuntimeObj);
-    FVector UnrealToolPoseToSofaPosition(const FTransform& InUnrealPose, const FSofaRuntimeToolDescriptor& ToolDesc);
-    FVector SofaToolPoseToUnrealPosition(const FTransform& InSofaPose, const FSofaRuntimeToolDescriptor& ToolDesc);
+    FQuat SofaLocalToUnrealLocalRotation(const FQuat& InSofaRotation);
+    FQuat UnrealLocalToSofaLocalRotation(const FQuat& InUnrealRotation);
+    FTransform SofaLocalToUnrealLocalTransform(const FTransform& InSofaLocalTransform, float InScale, FVector InScale3D);
+    FTransform UnrealLocalToSofaLocalTransform(const FTransform& InUnrealLocalTransform, float InScale, FVector InScale3D);
 }
 
 namespace sofa::simulation
@@ -63,6 +63,7 @@ namespace SofaSceneExtractor
         const FSofaRuntimeObjectDescriptor& RuntimeObj,
         const FSofaResolvedBinding& MechanicalBinding,
         TArray<FSofaDebugPoint>& OutPoints,
+        TArray<FSofaDebugPoint>& OutCollisionPoints,
         FString& OutError);
     
     bool ExtractMechanicalSurfaceDebugTriangles(
@@ -83,6 +84,13 @@ namespace SofaSceneExtractor
         const FSofaRuntimeObjectDescriptor& RuntimeObj,
         const FSofaResolvedBinding& Binding,
         FSofaObjectState& OutState,
+        FString& OutError);
+
+    bool ExtractStaticCollisionDebugPoints(
+        const FSofaRuntimeScene& Scene,
+        const FSofaRuntimeObjectDescriptor& RuntimeObj,
+        const FSofaResolvedBinding& Binding,
+        TArray<FSofaDebugPoint>& OutPoints,
         FString& OutError);
 }
 

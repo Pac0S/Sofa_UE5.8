@@ -40,6 +40,12 @@ public:
 
     bool SubmitToolInput(const FSofaToolInputState& Input);
 
+    bool FindRuntimeToolDescriptor(FSofaRuntimeToolDescriptor& ToolDesc, FName ToolId) const;
+    bool FindRuntimeObjectDescriptor(FSofaRuntimeObjectDescriptor& ObjectDesc, FName ObjectId) const;
+
+    bool GetStaticCollisionDebugPointsByMesh(TMap<FName, TArray<FSofaDebugPoint>>& OutPointsByMesh, FString& OutError) const;
+
+
 private:
     friend class FSofaSimWorker;
     friend class FSofaSceneBuilder;

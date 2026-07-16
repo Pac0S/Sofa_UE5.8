@@ -41,13 +41,22 @@ struct SOFABRIDGE_API FSofaRuntimeObjectDescriptor
     FString VisualMaterialPath;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
-    FName CollisionNodeName = TEXT("Collision");;
+    FString StaticMeshPath;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    FString CollisionNodeName = TEXT("Collision");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    FString CollisionObjectName = TEXT("collisionDofs");
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA")
-    FTransform UnrealAnchorTransform = FTransform::Identity;
+    FTransform InitialLocalTransform = FTransform::Identity;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA")
     float SofaScale = 10.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    FVector SofaScale3D = FVector(1.0, 1.0, 1.0);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA")
     bool bVisible = true;
@@ -119,9 +128,6 @@ struct SOFABRIDGE_API FSofaObjectState
     FName ObjectId = NAME_None;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA")
-    FTransform WorldTransform = FTransform::Identity;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA")
     FVector LinearVelocity = FVector::ZeroVector;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA")
@@ -129,6 +135,9 @@ struct SOFABRIDGE_API FSofaObjectState
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA")
     TArray<FSofaDebugPoint> DebugPoints;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    TArray<FSofaDebugPoint> CollisionDebugPoints;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SOFA")
     TArray<FSofaDebugTriangle> SurfaceTriangles;
@@ -152,10 +161,13 @@ struct SOFABRIDGE_API FSofaRuntimeToolDescriptor
     FName ControlMechanicalObjectName = TEXT("controlMO");
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
-    FTransform UnrealAnchorTransform = FTransform::Identity;
+    FTransform InitialLocalTransform = FTransform::Identity;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
     float SofaScale = 10.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
+    FVector SofaScale3D = FVector(1.0, 1.0, 1.0);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SOFA")
     bool bVisible = true;
@@ -222,4 +234,6 @@ struct FSofaMechanicalBindingDescriptor
     FString VisualNodePath;
     FString VisualObjectKey;
     FString VisualTopologyObjectKey;
+    FString CollisionNodePath;
+    FString CollisionObjectKey;
 };

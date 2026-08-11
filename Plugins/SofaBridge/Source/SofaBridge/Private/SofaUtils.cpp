@@ -139,48 +139,51 @@ namespace SofaMaterialUtils
 
 namespace SofaCoordinateSystem
 {
-    FVector SofaToUnrealPosition(
-        const FVector& InSofaPosition,
-        const FSofaRuntimeObjectDescriptor& RuntimeObj)
+    FQuat SofaLocalToUnrealLocalRotation(const FQuat& InSofaRotation)
     {
-        const float SafeScale = FMath::IsNearlyZero(RuntimeObj.SofaScale) ? 1.0f : RuntimeObj.SofaScale;
-        const FVector SofaScaled(InSofaPosition.X * SafeScale, InSofaPosition.Y * SafeScale, InSofaPosition.Z * SafeScale);
-        const FVector UnrealLocalPosition(SofaScaled.X, SofaScaled.Z, SofaScaled.Y);
-        return RuntimeObj.UnrealAnchorTransform.TransformPosition(UnrealLocalPosition);
+        const FVector SofaX = InSofaRotation.RotateVector(FVector::ForwardVector); // (1,0,0)
+        const FVector SofaY = InSofaRotation.RotateVector(FVector::RightVector);   // (0,1,0)
+        const FVector SofaZ = InSofaRotation.RotateVector(FVector::UpVector);      // (0,0,1)
+        const FVector UnrealX(SofaX.X, SofaX.Z, SofaX.Y);
+        const FVector UnrealY(SofaY.X, SofaY.Z, SofaY.Y);
+        const FVector UnrealZ(SofaZ.X, SofaZ.Z, SofaZ.Y);
+        const FMatrix UnrealBasis(FPlane(UnrealX.X, UnrealX.Y, UnrealX.Z, 0.f), FPlane(UnrealY.X, UnrealY.Y, UnrealY.Z, 0.f), FPlane(UnrealZ.X, UnrealZ.Y, UnrealZ.Z, 0.f), FPlane(0.f, 0.f, 0.f, 1.f));
+        return FQuat(UnrealBasis);
     }
 
-    FVector SofaToolPoseToUnrealPosition(
-        const FTransform& InSofaPose,
-        const FSofaRuntimeToolDescriptor& ToolDesc)
+    FQuat UnrealLocalToSofaLocalRotation(const FQuat& InUnrealRotation)
     {
-        const float SafeScale = FMath::IsNearlyZero(ToolDesc.SofaScale) ? 1.0f : ToolDesc.SofaScale;
-        const FVector SofaPosition = InSofaPose.GetLocation();
-        const FVector UnrealLocalPosition(SofaPosition.X * SafeScale, SofaPosition.Z * SafeScale, SofaPosition.Y * SafeScale);
-
-        return ToolDesc.UnrealAnchorTransform.TransformPosition(UnrealLocalPosition);
+        const FVector UnrealX = InUnrealRotation.RotateVector(FVector::ForwardVector); // (1,0,0)
+        const FVector UnrealY = InUnrealRotation.RotateVector(FVector::RightVector);   // (0,1,0)
+        const FVector UnrealZ = InUnrealRotation.RotateVector(FVector::UpVector);      // (0,0,1)
+        const FVector SofaX(UnrealX.X, UnrealX.Z, UnrealX.Y);
+        const FVector SofaY(UnrealY.X, UnrealY.Z, UnrealY.Y);
+        const FVector SofaZ(UnrealZ.X, UnrealZ.Z, UnrealZ.Y);
+        const FMatrix SofaBasis(FPlane(SofaX.X, SofaX.Y, SofaX.Z, 0.f), FPlane(SofaY.X, SofaY.Y, SofaY.Z, 0.f), FPlane(SofaZ.X, SofaZ.Y, SofaZ.Z, 0.f), FPlane(0.f, 0.f, 0.f, 1.f));
+        return FQuat(SofaBasis);
     }
 
-    FVector UnrealToSofaPosition(
-        const FVector& InUnrealPosition,
-        const FSofaRuntimeObjectDescriptor& RuntimeObj)
+    FTransform SofaLocalToUnrealLocalTransform(const FTransform& InSofaLocalTransform, float InScale, FVector InScale3D)
     {
-        const float SafeScale = FMath::IsNearlyZero(RuntimeObj.SofaScale) ? 1.0f : RuntimeObj.SofaScale;
-        const FVector UnrealLocalPosition = RuntimeObj.UnrealAnchorTransform.InverseTransformPosition(InUnrealPosition);
-        const FVector SofaScaled(UnrealLocalPosition.X, UnrealLocalPosition.Z, UnrealLocalPosition.Y);
-
-        return FVector(SofaScaled.X / SafeScale, SofaScaled.Y / SafeScale, SofaScaled.Z / SafeScale);
+        const float SafeScale = FMath::IsNearlyZero(InScale) ? 1.0f : InScale;
+        const FVector SofaPos = InSofaLocalTransform.GetLocation();
+        const FVector UnrealPos(SofaPos.X * SafeScale, SofaPos.Z * SafeScale, SofaPos.Y * SafeScale);
+        const FQuat UnrealRot = SofaLocalToUnrealLocalRotation(InSofaLocalTransform.GetRotation());
+        const FVector SofaScale3D = InSofaLocalTransform.GetScale3D();
+        const FVector UnrealScale3D(SofaScale3D.X, SofaScale3D.Z, SofaScale3D.Y);
+        return FTransform(UnrealRot, UnrealPos, UnrealScale3D);
     }
 
-    FVector UnrealToolPoseToSofaPosition(
-        const FTransform& InUnrealPose,
-        const FSofaRuntimeToolDescriptor& ToolDesc)
+    FTransform UnrealLocalToSofaLocalTransform(const FTransform& InUnrealLocalTransform, float InScale, FVector InScale3D)
     {
-        const float SafeScale = FMath::IsNearlyZero(ToolDesc.SofaScale) ? 1.0f : ToolDesc.SofaScale;
-        const FVector UnrealWorldPosition = InUnrealPose.GetLocation();
-        const FVector UnrealLocalPosition = ToolDesc.UnrealAnchorTransform.InverseTransformPosition(UnrealWorldPosition);
-        const FVector SofaScaled(UnrealLocalPosition.X, UnrealLocalPosition.Z,UnrealLocalPosition.Y);
+        const float SafeScale = FMath::IsNearlyZero(InScale) ? 1.0f : InScale;
 
-        return FVector(SofaScaled.X / SafeScale, SofaScaled.Y / SafeScale, SofaScaled.Z / SafeScale);
+        const FVector UnrealPos = InUnrealLocalTransform.GetLocation();
+        const FVector SofaPos(UnrealPos.X / SafeScale, UnrealPos.Z / SafeScale, UnrealPos.Y / SafeScale);
+        const FQuat SofaRot = UnrealLocalToSofaLocalRotation(InUnrealLocalTransform.GetRotation());
+        const FVector UnrealScale3D = InUnrealLocalTransform.GetScale3D();
+        const FVector SofaScale3D(UnrealScale3D.X, UnrealScale3D.Z, UnrealScale3D.Y);
+        return FTransform(SofaRot, SofaPos, SofaScale3D);
     }
 }
 
@@ -229,7 +232,7 @@ namespace SofaFinder
             return nullptr;
         }
 
-        return IndexedObject;
+return IndexedObject;
     }
 
     static sofa::simulation::Node* ResolveNodeByPathSegments(
@@ -317,8 +320,7 @@ namespace SofaSceneExtractor
             return false;
         }
 
-        using Vec3MechanicalObject =
-            sofa::component::statecontainer::MechanicalObject<sofa::defaulttype::Vec3Types>;
+        using Vec3MechanicalObject = sofa::component::statecontainer::MechanicalObject<sofa::defaulttype::Vec3Types>;
 
         if (auto* MO = dynamic_cast<Vec3MechanicalObject*>(Object))
         {
@@ -328,17 +330,13 @@ namespace SofaSceneExtractor
             for (int32 i = 0; i < (int32)Positions.size(); ++i)
             {
                 const auto& P = Positions[i];
-                OutSofaPositions.Add(FVector(
-                    static_cast<float>(P[0]),
-                    static_cast<float>(P[1]),
-                    static_cast<float>(P[2])));
+                OutSofaPositions.Add(FVector((float)P[0], (float)P[1], (float)P[2]));
             }
 
-            return OutSofaPositions.Num() > 0;
+            if (OutSofaPositions.Num() > 0) return true;
         }
 
-        using RigidMechanicalObject =
-            sofa::component::statecontainer::MechanicalObject<sofa::defaulttype::Rigid3Types>;
+        using RigidMechanicalObject = sofa::component::statecontainer::MechanicalObject<sofa::defaulttype::Rigid3Types>;
 
         if (auto* MO = dynamic_cast<RigidMechanicalObject*>(Object))
         {
@@ -356,11 +354,10 @@ namespace SofaSceneExtractor
                     static_cast<float>(C[2])));
             }
 
-            return OutSofaPositions.Num() > 0;
+            if (OutSofaPositions.Num() > 0) return true;
         }
 
-        using Vec3Data =
-            sofa::core::objectmodel::Data<sofa::type::vector<sofa::type::Vec3d>>;
+        using Vec3Data = sofa::core::objectmodel::Data<sofa::type::vector<sofa::type::Vec3d>>;
 
         if (auto* PositionData = Object->findData("position"))
         {
@@ -378,7 +375,7 @@ namespace SofaSceneExtractor
                         static_cast<float>(P[2])));
                 }
 
-                return OutSofaPositions.Num() > 0;
+                if (OutSofaPositions.Num() > 0) return true;
             }
         }
 
@@ -425,6 +422,7 @@ namespace SofaSceneExtractor
         const FSofaRuntimeObjectDescriptor& RuntimeObj,
         const FSofaResolvedBinding& Binding,
         TArray<FSofaDebugPoint>& OutPoints,
+        TArray<FSofaDebugPoint>& OutCollisionPoints,
         FString& OutError)
     {
         OutPoints.Reset();
@@ -469,8 +467,54 @@ namespace SofaSceneExtractor
         for (const FVector& SofaPos : SofaPositions)
         {
             FSofaDebugPoint& Pt = OutPoints.AddDefaulted_GetRef();
-            Pt.Position = SofaCoordinateSystem::SofaToUnrealPosition(SofaPos, RuntimeObj);
+            const FTransform SofaLocalObjectTransform(FQuat::Identity, SofaPos);
+            const FTransform UnrealLocalObjectTransform = SofaCoordinateSystem::SofaLocalToUnrealLocalTransform(SofaLocalObjectTransform, RuntimeObj.SofaScale, RuntimeObj.SofaScale3D);
+            /*if (OutPoints.Num() < 5)
+            {
+                UE_LOG(LogTemp, Verbose,
+                    TEXT("[SOFA][MechanicalDebug] Idx=%d SofaPos=%s UnrealPos=%s Scale=%.3f"),
+                    OutPoints.Num(),
+                    *SofaPos.ToString(),
+                    *UnrealLocalObjectTransform.GetLocation().ToString());
+            }*/
+            Pt.Position = UnrealLocalObjectTransform.GetLocation();
             Pt.Color = FColor::Green;
+            Pt.Size = 8.0f;
+        }
+
+        sofa::core::objectmodel::BaseObject* CollisionMechanicalObject = SofaFinder::ResolveObjectByKey(Scene, Binding.Descriptor.CollisionObjectKey);
+
+        if (!CollisionMechanicalObject)
+        {
+            OutError = FString::Printf(TEXT("Collision debug points: failed to resolve object '%s'"), *Binding.Descriptor.CollisionObjectKey);
+            return false;
+        }
+
+        TArray<FVector> CollisionPositions;
+        if (!ReadVec3PositionsFromBaseObject(CollisionMechanicalObject, CollisionPositions))
+        {
+            OutError = FString::Printf(
+                TEXT("MechanicalObject: object '%s' does not expose readable positions"),
+                *Binding.Descriptor.ObjectKey);
+            return false;
+        }
+        OutCollisionPoints.Reserve(CollisionPositions.Num());
+
+        for (const FVector& SofaPos : CollisionPositions)
+        {
+            const FTransform SofaLocalObjectTransform(FQuat::Identity, SofaPos);
+            const FTransform UnrealLocalObjectTransform = SofaCoordinateSystem::SofaLocalToUnrealLocalTransform(SofaLocalObjectTransform, RuntimeObj.SofaScale, RuntimeObj.SofaScale3D);
+            FSofaDebugPoint& Pt = OutCollisionPoints.AddDefaulted_GetRef();
+            if (OutCollisionPoints.Num() < 5)
+            {
+                UE_LOG(LogTemp, Verbose,
+                    TEXT("[SOFA][CollisionObject] Idx=%d SofaPos=%s UnrealPos=%s"),
+                    OutCollisionPoints.Num(),
+                    *SofaPos.ToString(),
+                    *UnrealLocalObjectTransform.GetLocation().ToString());
+            }
+            Pt.Position = UnrealLocalObjectTransform.GetLocation();
+            Pt.Color = FColor::Blue;
             Pt.Size = 8.0f;
         }
 
@@ -595,8 +639,17 @@ namespace SofaSceneExtractor
         OutMesh.Vertices.Reserve(SofaPositions.Num());
         for (const FVector& SofaPos : SofaPositions)
         {
-            OutMesh.Vertices.Add(
-                SofaCoordinateSystem::SofaToUnrealPosition(SofaPos, RuntimeObj));
+            const FTransform SofaLocalObjectTransform(FQuat::Identity, SofaPos);
+            const FTransform UnrealLocalObjectTransform = SofaCoordinateSystem::SofaLocalToUnrealLocalTransform(SofaLocalObjectTransform, RuntimeObj.SofaScale, RuntimeObj.SofaScale3D);
+            /*if (OutMesh.Vertices.Num() < 5)
+            {
+                UE_LOG(LogTemp, Verbose,
+                    TEXT("[SOFA][VisualSurface] Idx=%d SofaPos=%s UnrealPos=%s"),
+                    OutMesh.Vertices.Num(),
+                    *SofaPos.ToString(),
+                    *UnrealLocalObjectTransform.GetLocation().ToString());
+            }*/
+            OutMesh.Vertices.Add(UnrealLocalObjectTransform.GetLocation());
         }
 
         const sofa::Size TriangleCount = VisualTopology->getNbTriangles();
@@ -642,6 +695,7 @@ namespace SofaSceneExtractor
         OutState.SurfaceMesh.Normals.Reset();
         OutState.SurfaceMesh.UV0.Reset();
         OutState.DebugPoints.Reset();
+        OutState.CollisionDebugPoints.Reset();
         OutState.SurfaceTriangles.Reset();
 
         FString VisualError;
@@ -652,6 +706,7 @@ namespace SofaSceneExtractor
             RuntimeObj,
             Binding,
             OutState.DebugPoints,
+            OutState.CollisionDebugPoints,
             FallbackError))
         {
             OutError = FString::Printf(
@@ -716,6 +771,82 @@ namespace SofaSceneExtractor
 
         OutState.SurfaceMesh.Source = ESofaSurfaceSource::DerivedSurface;
         return true;
+    }
+
+    bool ExtractStaticCollisionDebugPoints(
+        const FSofaRuntimeScene& Scene,
+        const FSofaRuntimeObjectDescriptor& RuntimeObj,
+        const FSofaResolvedBinding& Binding,
+        TArray<FSofaDebugPoint>& OutPoints,
+        FString& OutError)
+    {
+        OutPoints.Reset();
+        OutError.Reset();
+
+#if !SOFA_SDK_ENABLED
+        OutError = TEXT("SOFA SDK disabled");
+        return false;
+#else
+        if (!Binding.IsValidForGeneration(Scene.SceneGeneration))
+        {
+            OutError = TEXT("Static collision: invalid binding");
+            return false;
+        }
+
+        if (Binding.Descriptor.ObjectKey.IsEmpty())
+        {
+            OutError = TEXT("Static collision: missing object mechanical key");
+            return false;
+        }
+
+        sofa::core::objectmodel::BaseObject* CollisionObject = SofaFinder::ResolveObjectByKey(Scene, Binding.Descriptor.CollisionObjectKey);
+
+        UE_LOG(LogTemp, Log, TEXT("[ExtractStaticCollisionDebugPoints] Object key : %s"), *Binding.Descriptor.ObjectKey);
+
+        if (!CollisionObject)
+        {
+            OutError = FString::Printf(
+                TEXT("Static collision: failed to resolve object '%s'"),
+                *Binding.Descriptor.ObjectKey);
+            return false;
+        }
+
+        TArray<FVector> SofaPositions;
+        if (!ReadVec3PositionsFromBaseObject(CollisionObject, SofaPositions))
+        {
+            OutError = FString::Printf(
+                TEXT("Static collision: object '%s' does not expose readable positions"),
+                *Binding.Descriptor.ObjectKey);
+            return false;
+        }
+
+        if (SofaPositions.IsEmpty())
+        {
+            OutError = FString::Printf(
+                TEXT("Static collision: object '%s' exposes zero positions"),
+                *Binding.Descriptor.ObjectKey);
+            return false;
+        }
+
+        OutPoints.Reserve(SofaPositions.Num());
+
+        for (const FVector& SofaPos : SofaPositions)
+        {
+            const FTransform SofaLocalObjectTransform(FQuat::Identity, SofaPos);
+            const FTransform UnrealLocalObjectTransform = SofaCoordinateSystem::SofaLocalToUnrealLocalTransform(SofaLocalObjectTransform, RuntimeObj.SofaScale, RuntimeObj.SofaScale3D);
+            FSofaDebugPoint& Pt = OutPoints.AddDefaulted_GetRef();
+            UE_LOG(LogTemp, Warning,
+                TEXT("[SOFA][StaticObject] Idx=%d SofaPos=%s UnrealPos=%s"),
+                OutPoints.Num(),
+                *SofaPos.ToString(),
+                *UnrealLocalObjectTransform.GetLocation().ToString());
+            Pt.Position = UnrealLocalObjectTransform.GetLocation();
+            Pt.Color = FColor::Green;
+            Pt.Size = 6.0f;
+        }
+
+        return true;
+#endif
     }
 }
 

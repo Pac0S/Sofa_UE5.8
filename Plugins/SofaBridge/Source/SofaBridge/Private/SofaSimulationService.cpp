@@ -204,8 +204,8 @@ namespace
             return false;
         }
 
-        const FVector SofaTarget =
-            SofaCoordinateSystem::UnrealToolPoseToSofaPosition(UETargetPose, ToolDesc);
+        const FTransform SofaTargetTransform = SofaCoordinateSystem::UnrealLocalToSofaLocalTransform(UETargetPose, ToolDesc.SofaScale, ToolDesc.SofaScale3D);
+        const FVector SofaTargetLocation = SofaTargetTransform.GetLocation();
 
         sofa::core::objectmodel::BaseData* PositionData = Object->findData("position");
         if (!PositionData)
@@ -229,9 +229,9 @@ namespace
 
             RigidCoord& Pose = Positions[0];
             Pose.getCenter() = sofa::type::Vec3(
-                static_cast<double>(SofaTarget.X),
-                static_cast<double>(SofaTarget.Y),
-                static_cast<double>(SofaTarget.Z));
+                static_cast<double>(SofaTargetLocation.X),
+                static_cast<double>(SofaTargetLocation.Y),
+                static_cast<double>(SofaTargetLocation.Z));
             Pose.getOrientation() = sofa::type::Quat<double>(0.0, 0.0, 0.0, 1.0);
 
             TypedData->endEdit();
@@ -253,9 +253,9 @@ namespace
             }
 
             Positions[0] = Vec3Coord(
-                static_cast<double>(SofaTarget.X),
-                static_cast<double>(SofaTarget.Y),
-                static_cast<double>(SofaTarget.Z));
+                static_cast<double>(SofaTargetLocation.X),
+                static_cast<double>(SofaTargetLocation.Y),
+                static_cast<double>(SofaTargetLocation.Z));
 
             TypedData->endEdit();
             return true;
@@ -323,21 +323,6 @@ namespace
 
 #endif
 }
-
-static const FSofaRuntimeToolDescriptor* FindRuntimeToolDescriptor(
-    const FSofaRuntimeScene& Scene,
-    FName ToolId)
-{
-    for (const FSofaRuntimeToolDescriptor& ToolDesc : Scene.RuntimeTools)
-    {
-        if (ToolDesc.ToolNodeName == ToolId)
-        {
-            return &ToolDesc;
-        }
-    }
-    return nullptr;
-}
-
 
 FSofaSimulationService::FSofaSimulationService()
 {
@@ -551,33 +536,31 @@ bool FSofaSimulationService::StepSimulation(double DeltaTime)
     {
         FSofaObjectState ObjState;
         ObjState.ObjectId = FName(*RuntimeObj.ObjectNodeName);
-        ObjState.WorldTransform = RuntimeObj.UnrealAnchorTransform;
 
-        const FName ObjectId = FName(*RuntimeObj.ObjectNodeName);
-
-        FString ExtractError;
-
-        const FSofaResolvedBinding* ObjectBinding = FindBinding(*SofaContext, ObjectId, ESofaBindingUsage::ObjectMechanical);
-
-        if (!ObjectBinding)
+        if (RuntimeObj.Role == ESofaRuntimeObjectRole::Organ || RuntimeObj.Role == ESofaRuntimeObjectRole::DeformableLayer)
         {
-            UE_LOG(LogSofaService, Warning,
-                TEXT("StepSimulation: no ObjectMechanical binding for runtime object '%s'."),
-                *RuntimeObj.ObjectNodeName);
+            const FName ObjectId = FName(*RuntimeObj.ObjectNodeName);
+            FString ExtractError;
+            const FSofaResolvedBinding* ObjectBinding = FindBinding(*SofaContext, ObjectId, ESofaBindingUsage::ObjectMechanical);
+            if (!ObjectBinding)
+            {
+                UE_LOG(LogSofaService, Warning,
+                    TEXT("StepSimulation: no ObjectMechanical binding for runtime object '%s'."),
+                    *RuntimeObj.ObjectNodeName);
+            }
+            else if (!SofaSceneExtractor::ExtractRenderableSurfaceMesh(
+                *SofaContext,
+                RuntimeObj,
+                *ObjectBinding,
+                ObjState,
+                ExtractError))
+            {
+                UE_LOG(LogSofaService, Warning,
+                    TEXT("ExtractRenderableSurfaceMesh failed for runtime object '%s': %s"),
+                    *RuntimeObj.ObjectNodeName,
+                    *ExtractError);
+            }
         }
-        else if (!SofaSceneExtractor::ExtractRenderableSurfaceMesh(
-            *SofaContext,
-            RuntimeObj,
-            *ObjectBinding,
-            ObjState,
-            ExtractError))
-        {
-            UE_LOG(LogSofaService, Warning,
-                TEXT("ExtractRenderableSurfaceMesh failed for runtime object '%s': %s"),
-                *RuntimeObj.ObjectNodeName,
-                *ExtractError);
-        }
-
         Snapshot.Objects.Add(MoveTemp(ObjState));
     }
 
@@ -612,11 +595,9 @@ bool FSofaSimulationService::StepSimulation(double DeltaTime)
         }
 
         const FTransform SofaPose(FQuat::Identity, SofaPos);
-        const FVector UnrealPos =
-            SofaCoordinateSystem::SofaToolPoseToUnrealPosition(SofaPose, ToolDesc);
 
-        FTransform UnrealLocalToolTransform = FTransform::Identity;
-        UnrealLocalToolTransform.SetLocation(UnrealPos);
+        const FTransform UnrealLocalToolTransform = SofaCoordinateSystem::SofaLocalToUnrealLocalTransform(SofaPose, ToolDesc.SofaScale, ToolDesc.SofaScale3D);
+
         ToolState.UnrealLocalToolTransform = UnrealLocalToolTransform;
         ToolState.bValid = true;
 
@@ -626,6 +607,34 @@ bool FSofaSimulationService::StepSimulation(double DeltaTime)
     PublishSnapshot(MoveTemp(Snapshot));
     return true;
 #endif
+}
+
+bool FSofaSimulationService::FindRuntimeToolDescriptor(FSofaRuntimeToolDescriptor& ToolDesc, FName ToolId) const
+{
+    if (!SofaContext) return false;
+    for (const FSofaRuntimeToolDescriptor& Descriptor : SofaContext->RuntimeTools)
+    {
+        if (Descriptor.ToolNodeName == ToolId)
+        {
+            ToolDesc = Descriptor;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool FSofaSimulationService::FindRuntimeObjectDescriptor(FSofaRuntimeObjectDescriptor& ObjectDesc, FName ObjectId) const
+{
+    if (!SofaContext) return false;
+    for (const FSofaRuntimeObjectDescriptor& Descriptor : SofaContext->RuntimeObjects)
+    {
+        if (Descriptor.ObjectNodeName == ObjectId)
+        {
+            ObjectDesc = Descriptor;
+            return true;
+        }
+    }
+    return false;
 }
 
 bool FSofaSimulationService::GetRuntimeObjectMaterialPath(FName ObjectId, FString& OutMaterialPath) const
@@ -735,7 +744,7 @@ void FSofaSimulationService::InitializeBindings_NoLock()
     for (const FSofaRuntimeObjectDescriptor& RuntimeObj : SofaContext->RuntimeObjects)
     {
         const FName OwnerId(*RuntimeObj.ObjectNodeName);
-        if (OwnerId.IsNone() || RuntimeObj.MechanicalObjectName.IsEmpty())
+        if (OwnerId.IsNone())
         {
             continue;
         }
@@ -743,7 +752,7 @@ void FSofaSimulationService::InitializeBindings_NoLock()
         FSofaResolvedBinding& Binding = SofaContext->Bindings.AddDefaulted_GetRef();
 
         const FString ObjectNodePath = FString::Printf(TEXT("root/%s"), *RuntimeObj.ObjectNodeName);
-        const FString MechanicalObjectKey = FString::Printf(TEXT("%s::%s"), *ObjectNodePath, *RuntimeObj.MechanicalObjectName);
+        FString MechanicalObjectKey = FString::Printf(TEXT("%s::%s"), *ObjectNodePath, *RuntimeObj.MechanicalObjectName);
         if (!RuntimeObj.SurfaceNodeName.IsEmpty() && !RuntimeObj.SurfaceTopologyName.IsEmpty())
         {
             const FString SurfaceNodePath = FString::Printf(TEXT("%s/%s"), *ObjectNodePath, *RuntimeObj.SurfaceNodeName);
@@ -781,6 +790,28 @@ void FSofaSimulationService::InitializeBindings_NoLock()
                     if (FindIndexedObjectByKey(*SofaContext, VisualTopologyObjectKey))
                     {
                         Binding.Descriptor.VisualTopologyObjectKey = VisualTopologyObjectKey;
+                    }
+                }
+            }
+        }
+
+        if (!RuntimeObj.CollisionNodeName.IsEmpty())
+        {
+            const FString CollisionNodePath = FString::Printf(TEXT("%s/%s"), *ObjectNodePath, *RuntimeObj.CollisionNodeName);
+            if (FindIndexedNodeByPath(*SofaContext, CollisionNodePath))
+            {
+                Binding.Descriptor.CollisionNodePath = CollisionNodePath;
+                if (!RuntimeObj.CollisionObjectName.IsEmpty())
+                {
+                    const FString CollisionObjectKey = FString::Printf(TEXT("%s::%s"), *CollisionNodePath, *RuntimeObj.CollisionObjectName);
+
+                    if (FindIndexedObjectByKey(*SofaContext, CollisionObjectKey))
+                    {
+                        Binding.Descriptor.CollisionObjectKey = CollisionObjectKey;
+                        if (RuntimeObj.MechanicalObjectName.IsEmpty())
+                        {
+                            MechanicalObjectKey = CollisionObjectKey;
+                        }
                     }
                 }
             }
@@ -877,9 +908,10 @@ void FSofaSimulationService::ApplyPendingToolInputsToSimulation_NoLock()
             continue;
         }
 
-        const FSofaRuntimeToolDescriptor* ToolDesc = FindRuntimeToolDescriptor(*SofaContext, Input.ToolId);
+        FSofaRuntimeToolDescriptor ToolDesc;
+        FindRuntimeToolDescriptor(ToolDesc, Input.ToolId);
 
-        if (!ToolDesc)
+        if (!&ToolDesc)
         {
             UE_LOG(LogSofaService, Warning,
                 TEXT("ApplyPendingToolInputsToSimulation: missing runtime descriptor for tool '%s'."),
@@ -887,7 +919,7 @@ void FSofaSimulationService::ApplyPendingToolInputsToSimulation_NoLock()
             continue;
         }
 
-        if (!ApplyTargetToBinding(*SofaContext, *Binding, *ToolDesc, Input.TargetPose))
+        if (!ApplyTargetToBinding(*SofaContext, *Binding, ToolDesc, Input.TargetPose))
         {
             UE_LOG(LogSofaService, Warning,
                 TEXT("ApplyPendingToolInputsToSimulation: failed to apply pose for tool '%s'."),
@@ -902,4 +934,78 @@ void FSofaSimulationService::ApplyPendingToolInputsToSimulation()
 {
     FScopeLock SceneLock(&SceneMutex);
     ApplyPendingToolInputsToSimulation_NoLock();
+}
+
+bool FSofaSimulationService::GetStaticCollisionDebugPointsByMesh(
+    TMap<FName, TArray<FSofaDebugPoint>>& OutPointsByMesh,
+    FString& OutError) const
+{
+    OutPointsByMesh.Reset();
+    OutError.Reset();
+
+    if (!SofaContext.IsValid())
+    {
+        OutError = TEXT("SOFA runtime scene is invalid.");
+        return false;
+    }
+
+    if (!SofaContext->RootNode)
+    {
+        OutError = TEXT("SOFA simulation graph root is null.");
+        return false;
+    }
+
+    bool bAnyCaptured = false;
+
+    for (const FSofaRuntimeObjectDescriptor& RuntimeObj : SofaContext->RuntimeObjects)
+    {
+        if (RuntimeObj.Role != ESofaRuntimeObjectRole::StaticSupport)
+        {
+            continue;
+        }
+
+        const FName ObjectId = FName(*RuntimeObj.ObjectNodeName);
+        FString ExtractError;
+
+        const FSofaResolvedBinding* ObjectBinding = FindBinding(*SofaContext, ObjectId, ESofaBindingUsage::ObjectMechanical);
+
+        if (!ObjectBinding)
+        {
+            UE_LOG(LogSofaService, Warning,
+                TEXT("GetStaticCollisionDebugPointsByMesh: no ObjectMechanical binding for runtime object '%s'."),
+                *RuntimeObj.ObjectNodeName);
+            continue;
+        }
+
+        TArray<FSofaDebugPoint> Points;
+        if (!SofaSceneExtractor::ExtractStaticCollisionDebugPoints(
+            *SofaContext,
+            RuntimeObj,
+            *ObjectBinding,
+            Points,
+            ExtractError))
+        {
+            UE_LOG(LogSofaService, Warning,
+                TEXT("ExtractStaticCollisionDebugPoints failed for runtime object '%s': %s"),
+                *RuntimeObj.ObjectNodeName,
+                *ExtractError);
+            continue;
+        }
+
+        if (Points.IsEmpty())
+        {
+            continue;
+        }
+
+        OutPointsByMesh.Add(ObjectId, MoveTemp(Points));
+        bAnyCaptured = true;
+    }
+
+    if (!bAnyCaptured)
+    {
+        OutError = TEXT("No static collision debug points could be captured.");
+        return false;
+    }
+
+    return true;
 }

@@ -32,7 +32,8 @@
 	<CollisionPipeline />
 	<BruteForceDetection name="N2" />
 	<NewProximityIntersection name="Proximity" alarmDistance="0.2" contactDistance="0.02" />
-	<CollisionResponse response="FrictionContactConstraint" responseParams="mu=0.8"/>
+	<!--<LocalMinDistance alarmDistance="0.2" contactDistance="0.05" angleCone="0.01"/>-->
+	<CollisionResponse response="FrictionContactConstraint" responseParams="mu=0.3"/>
 
     <!-- Rendering settings -->
     <!--<VisualStyle displayFlags="showVisual"/>-->
@@ -42,53 +43,57 @@
         <EulerImplicitSolver name="odeSolver"/>
         <CGLinearSolver name="linearSolver" iterations="25" threshold="1e-9" tolerance="1e-9"/>
         <MeshGmshLoader name="loader" filename="C:/Users/Pakito/Documents/Projets/AniSim/sofa/src/share/mesh/liver.msh"/>
-        <MechanicalObject name="mstate" template="Vec3d" src="@loader"/>
+        <MechanicalObject name="mstate" template="Vec3d" src="@loader" translation="0 12 0"/>
         <TetrahedronSetTopologyContainer name="topo" src="@loader"/>
         <TetrahedronSetTopologyModifier name="topoMod"/>
         <TetrahedronSetGeometryAlgorithms name="GeomAlgo" template="Vec3d"/>
-        <UniformMass name="mass" totalMass="1.0"/>
+        <UniformMass name="mass" totalMass="1"/>
         <TetrahedronFEMForceField name="forceField" template="Vec3d" listening="true" youngModulus="50.0" poissonRatio="0.3" method="large"/>
         <ConstantForceField name="InteractorForce" indices="100" totalForce="0 0 0"/>
-        <FixedProjectiveConstraint name="FixedConstraint" indices="1 3 50"/>
+        <!--<FixedProjectiveConstraint name="FixedConstraint" indices="1 3 50"/>-->
 		<UncoupledConstraintCorrection />
 
-        <Node name="Surface">
+        <Node name="LiverSurface">
             <TriangleSetTopologyContainer name="surfaceTopo"/>
             <TriangleSetTopologyModifier name="surfaceTopoMod"/>
             <TriangleSetGeometryAlgorithms name="surfaceGeom" template="Vec3d"/>
             <Tetra2TriangleTopologicalMapping input="@../topo" output="@surfaceTopo"/>
-			<MechanicalObject name="surfaceMO" template="Vec3d"/>
+			<MechanicalObject name="surfaceMO" template="Vec3d" />
 			<BarycentricMapping input="@../mstate" output="@surfaceMO"/>
         </Node>
 		
-		<Node name="Collision">
-			<TriangleSetTopologyContainer name="collisionTopo"/>
-			<TriangleSetTopologyModifier name="collisionTopoMod"/>
-			<TriangleSetGeometryAlgorithms name="collisionGeom" template="Vec3d"/>
-			<Tetra2TriangleTopologicalMapping input="@../topo" output="@collisionTopo"/>
-			
-			<MechanicalObject name="collisionMO" template="Vec3d" src="@collisionTopo"/>
-			<!--<BarycentricMapping input="@../mstate" output="@collisionMO"/>-->
-			<IdentityMapping input="@../mstate" output="@collisionMO"/>
-			
+		<Node name="LiverCollision">
+			<MeshOBJLoader name="collisionLoader" filename="C:/Users/Pakito/Documents/Projets/AniSim/sofa/src/share/mesh/liver.obj" handleSeams="true"/>
+			<TriangleSetTopologyContainer name="collisionTopo" src="@collisionLoader"/>
+            <TriangleSetTopologyModifier name="collisionTopoMod"/>
+            <TriangleSetGeometryAlgorithms name="collisionGeom" template="Vec3d"/>
+
+			<MechanicalObject name="collisionMO" template="Vec3d" src="@collisionLoader"  translation="@../mstate.translation"/>
+			<BarycentricMapping input="@../mstate" output="@collisionMO"/>
 			<TriangleCollisionModel/>
-			<LineCollisionModel/>
-			<PointCollisionModel/>
 		</Node>
 
-        <Node name="Visual">
+        <Node name="LiverVisual">
             <MeshOBJLoader name="visualMeshLoader" filename="C:/Users/Pakito/Documents/Projets/AniSim/sofa/src/share/mesh/liver.obj" handleSeams="true"/>
-            <TriangleSetTopologyContainer name="visualTopo" src="@visualMeshLoader"/>
-            <MechanicalObject name="visualDofs" template="Vec3d" src="@visualMeshLoader"/>
+            <TriangleSetTopologyContainer name="visualTopo" src="@visualMeshLoader" />
+            <MechanicalObject name="visualDofs" template="Vec3d" src="@visualMeshLoader" translation="@../mstate.translation"/>
             <BarycentricMapping input="@../mstate" output="@visualDofs"/>
         </Node>
     </Node>
 	<Node name="TOOL_Primary">
-		<MechanicalObject name="toolDOFs" template="Rigid3d" ... />
+		<MechanicalObject name="toolDOFs" template="Rigid3d" position="0 20 0 0 0 0 1"/>
 		<Node name="PrimaryToolCollision">
-			<MechanicalObject name="collisionDOFs" template="Rigid3d" ... />
+			<MechanicalObject name="collisionDOFs" template="Rigid3d"/>
 			<RigidMapping input="@../toolDOFs" output="@collisionDOFs"/>
-			<SphereCollisionModel radius="0.3"/>
+			<SphereCollisionModel radius="0.5"/>
+		</Node>
+	</Node>
+	<Node name="OBJ_Tray">
+		<MechanicalObject name="TrayDofs" template="Vec3d" src="@TrayLoader" position="-21.5 -1 -16.5 21.5 -1 -16.5 21.5 -1 16.5 -21.5 -1 16.5" scale3d="0.4 0.4 0.4" />
+		<Node name="TrayCollision">
+			<MechanicalObject name="TrayCollisionDofs" template="Vec3d" position="@../TrayDofs.position"/>
+			<TriangleSetTopologyContainer name="collisionTopo" triangles="0 1 2  0 2 3" />
+			<TriangleCollisionModel simulated="0" moving="0"/>
 		</Node>
 	</Node>
 </Node>

@@ -2,10 +2,11 @@
 #include "SofaSimulationService.h"
 #include "Logging/LogMacros.h"
 #include "Misc/Paths.h"
-#include "SofaRuntimeTypes.h"
 
+#include "SofaRuntimeTypes.h"
 #include "SofaIncludes.h"
 #include "SofaRuntimeScene.h"
+#include "SofaUtils.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogSofaSceneBuilder, Log, All);
 
@@ -364,7 +365,7 @@ namespace
         return nullptr;
     }
 
-    static FString FindFirstComponentNameByType(
+    static const FSofaComponentDefinition* FindFirstComponentByType(
         const FSofaNodeDefinition& NodeDef,
         const FString& ComponentType)
     {
@@ -372,10 +373,38 @@ namespace
         {
             if (CompDef.Type == ComponentType)
             {
-                return CompDef.Name;
+                return &CompDef;
             }
         }
+
+        return nullptr;
+    }
+
+    static FString FindFirstComponentNameByType(
+        const FSofaNodeDefinition& NodeDef,
+        const FString& ComponentType)
+    {
+        if (const FSofaComponentDefinition* CompDef = FindFirstComponentByType(NodeDef, ComponentType))
+        {
+            return CompDef->Name;
+        }
+
         return FString();
+    }
+
+    static bool TryGetComponentAttribute(
+        const FSofaComponentDefinition& ComponentDef,
+        const FString& AttributeName,
+        FString& OutValue)
+    {
+        if (const FString* FoundValue = ComponentDef.Attributes.Find(AttributeName))
+        {
+            OutValue = *FoundValue;
+            return true;
+        }
+
+        OutValue.Reset();
+        return false;
     }
 
     static FString FindFirstTopologyContainerName(
@@ -491,6 +520,130 @@ namespace
         return ESofaRuntimeObjectRole::Unknown;
     }
 
+    static bool TryBuildInitialLocalTransformFromMechanicalObject(
+        const FSofaNodeDefinition& NodeDef,
+        float SofaScale,
+        FVector SofaScale3D,
+        FTransform& OutInitialLocalTransform)
+    {
+        OutInitialLocalTransform = FTransform::Identity;
+
+        const FSofaComponentDefinition* MechanicalObject = FindFirstComponentByType(NodeDef, TEXT("MechanicalObject"));
+
+        if (!MechanicalObject || MechanicalObject->Type.IsEmpty())
+        {
+            OutInitialLocalTransform = FTransform::Identity;
+            return false;
+        }
+
+        FString TemplateName;
+        bool FoundTemplateAttribute = TryGetComponentAttribute(*MechanicalObject, TEXT("template"), TemplateName);
+
+        if (FoundTemplateAttribute && TemplateName == TEXT("Rigid3d"))
+        {
+            FString PositionString;
+            bool FoundPositionAttribute = TryGetComponentAttribute(*MechanicalObject, TEXT("position"), PositionString);
+
+            if (!FoundPositionAttribute || PositionString.IsEmpty())
+            {
+                return false;
+            }
+
+            TArray<FString> Tokens;
+            PositionString.ParseIntoArrayWS(Tokens);
+
+            if (Tokens.Num() < 7)
+            {
+                return false;
+            }
+
+            const FVector SofaPosition(FCString::Atof(*Tokens[0]), FCString::Atof(*Tokens[1]), FCString::Atof(*Tokens[2]));
+            const FQuat SofaRotation(FCString::Atof(*Tokens[3]), FCString::Atof(*Tokens[4]), FCString::Atof(*Tokens[5]), FCString::Atof(*Tokens[6]));
+            const FTransform SofaLocalTransform(SofaRotation,SofaPosition, FVector::OneVector);
+
+            OutInitialLocalTransform = SofaCoordinateSystem::SofaLocalToUnrealLocalTransform(SofaLocalTransform, SofaScale, SofaScale3D);
+
+            return true;
+        }
+
+        FVector SofaTranslation = FVector::ZeroVector;
+        {
+            FString TranslationString;
+            bool FoundTranslationAttribute = TryGetComponentAttribute(*MechanicalObject, TEXT("translation"), TranslationString);
+
+            if (FoundTranslationAttribute && !TranslationString.IsEmpty())
+            {
+                TArray<FString> Tokens;
+                TranslationString.ParseIntoArrayWS(Tokens);
+
+                if (Tokens.Num() >= 3)
+                {
+                    SofaTranslation.X = FCString::Atof(*Tokens[0]);
+                    SofaTranslation.Y = FCString::Atof(*Tokens[1]);
+                    SofaTranslation.Z = FCString::Atof(*Tokens[2]);
+                }
+            }
+        }
+
+        FQuat SofaRotation = FQuat::Identity;
+        {
+            FString RotationString;
+            bool FoundRotationAttribute = TryGetComponentAttribute(*MechanicalObject, TEXT("rotation"), RotationString);
+
+            if (FoundRotationAttribute && !RotationString.IsEmpty())
+            {
+                TArray<FString> Tokens;
+                RotationString.ParseIntoArrayWS(Tokens);
+
+                if (Tokens.Num() >= 4)
+                {
+                    SofaRotation.X = FCString::Atof(*Tokens[0]);
+                    SofaRotation.Y = FCString::Atof(*Tokens[1]);
+                    SofaRotation.Z = FCString::Atof(*Tokens[2]);
+                    SofaRotation.W = FCString::Atof(*Tokens[3]);
+                }
+            }
+        }
+
+        const FTransform SofaLocalTransform(SofaRotation, SofaTranslation, FVector::OneVector);
+
+        OutInitialLocalTransform = SofaCoordinateSystem::SofaLocalToUnrealLocalTransform(SofaLocalTransform, SofaScale, SofaScale3D);
+
+        return true;
+    }
+
+    static bool TryBuildSofaScale3DFromMechanicalObject(
+        const FSofaNodeDefinition& NodeDef,
+        FVector& OutSofaScale3D)
+    {
+        const FSofaComponentDefinition* MechanicalObject = FindFirstComponentByType(NodeDef, TEXT("MechanicalObject"));
+
+        if (!MechanicalObject || MechanicalObject->Type.IsEmpty())
+        {
+            OutSofaScale3D = FVector(1.0, 1.0, 1.0);
+            return false;
+        }
+
+        FString Scale3DString;
+        bool FoundScaleAttribute = TryGetComponentAttribute(*MechanicalObject, TEXT("scale3d"), Scale3DString);
+
+        if (FoundScaleAttribute && !Scale3DString.IsEmpty())
+        {
+            TArray<FString> Tokens;
+            Scale3DString.ParseIntoArrayWS(Tokens);
+
+            if (Tokens.Num() == 3)
+            {
+                OutSofaScale3D.X = FCString::Atof(*Tokens[0]);
+                OutSofaScale3D.Y = FCString::Atof(*Tokens[1]);
+                OutSofaScale3D.Z = FCString::Atof(*Tokens[2]);
+            }
+            return true;
+        }
+        OutSofaScale3D = FVector(1.0, 1.0, 1.0);
+        return false;
+    }
+
     static FSofaRuntimeObjectDescriptor MakeRuntimeObjectDescriptor(
         const FSofaNodeDefinition& NodeDef,
         const FSofaSceneIntegrationOverrides& IntegrationOverrides)
@@ -501,19 +654,24 @@ namespace
         RuntimeObject.MechanicalObjectName = FindFirstComponentNameByType(NodeDef, TEXT("MechanicalObject"));
         RuntimeObject.TopologyContainerName = FindFirstTopologyContainerName(NodeDef);
 
-        
+        RuntimeObject.VisualMaterialPath.Reset();
+        RuntimeObject.StaticMeshPath.Reset();
+        RuntimeObject.SofaScale = 1.0f;
+        RuntimeObject.InitialLocalTransform = FTransform::Identity;
+        RuntimeObject.bPreferVisualSurface = true;
+        RuntimeObject.Role = InferRuntimeObjectRole(NodeDef);
+        TryBuildSofaScale3DFromMechanicalObject(NodeDef, RuntimeObject.SofaScale3D);
 
         const FSofaNodeDefinition* SurfaceNode = FindChildNodeByName(NodeDef, TEXT("Surface"));
         const FSofaNodeDefinition* VisualNode = FindChildNodeByName(NodeDef, TEXT("Visual"));
         const FSofaNodeDefinition* CollisionNode = FindChildNodeByName(NodeDef, TEXT("Collision"));
 
-        
-
-        if (const FSofaObjectIntegrationOverride* Override = FindObjectOverride(IntegrationOverrides, RuntimeObject.ObjectNodeName))
+        if (const FSofaObjectIntegrationOverride* Override =
+            FindObjectOverride(IntegrationOverrides, RuntimeObject.ObjectNodeName))
         {
             RuntimeObject.VisualMaterialPath = Override->VisualMaterialPath;
-            RuntimeObject.SofaScale = Override->SofaScale;
-            RuntimeObject.UnrealAnchorTransform = FTransform(Override->UnrealRotation, Override->UnrealTranslation, FVector::OneVector);
+            RuntimeObject.StaticMeshPath = Override->StaticMeshPath;
+            RuntimeObject.SofaScale = FMath::IsNearlyZero(Override->SofaScale) ? 1.0f : Override->SofaScale;
             RuntimeObject.bPreferVisualSurface = Override->bPreferVisualSurface;
             RuntimeObject.Role = Override->Role;
 
@@ -526,6 +684,7 @@ namespace
                     SurfaceNode = OverrideSurfaceNode;
                 }
             }
+
             const FString VisualNodeNameFromOverride = FindNodeRefName(Override->NodeRefs, ESofaNodeRefRole::Visual);
             if (!VisualNodeNameFromOverride.IsEmpty())
             {
@@ -535,6 +694,7 @@ namespace
                     VisualNode = OverrideVisualNode;
                 }
             }
+
             const FString CollisionNodeNameFromOverride = FindNodeRefName(Override->NodeRefs, ESofaNodeRefRole::Collision);
             if (!CollisionNodeNameFromOverride.IsEmpty())
             {
@@ -545,13 +705,9 @@ namespace
                 }
             }
         }
-        else
-        {
-            RuntimeObject.VisualMaterialPath.Reset();
-            RuntimeObject.SofaScale = 10.0f;
-            RuntimeObject.UnrealAnchorTransform = FTransform::Identity;
-            RuntimeObject.bPreferVisualSurface = true;
-        }
+
+        TryBuildInitialLocalTransformFromMechanicalObject(NodeDef, RuntimeObject.SofaScale, RuntimeObject.SofaScale3D, RuntimeObject.InitialLocalTransform);
+
         if (SurfaceNode)
         {
             RuntimeObject.SurfaceNodeName = SurfaceNode->Name;
@@ -565,6 +721,12 @@ namespace
             RuntimeObject.VisualTopologyName = FindFirstTopologyContainerName(*VisualNode);
         }
 
+        if (CollisionNode)
+        {
+            RuntimeObject.CollisionNodeName = CollisionNode->Name;
+            RuntimeObject.CollisionObjectName = FindFirstComponentNameByType(*CollisionNode, TEXT("MechanicalObject"));
+        }
+
         return RuntimeObject;
     }
 
@@ -576,6 +738,8 @@ namespace
 
         RuntimeTool.ToolNodeName = FName(NodeDef.Name);
         RuntimeTool.ControlMechanicalObjectName = FName(FindFirstComponentNameByType(NodeDef, TEXT("MechanicalObject")));
+        RuntimeTool.InitialLocalTransform = FTransform::Identity;
+        TryBuildSofaScale3DFromMechanicalObject(NodeDef, RuntimeTool.SofaScale3D);
 
         const FSofaNodeDefinition* CollisionNode = FindChildNodeByName(NodeDef, TEXT("PrimaryToolCollision"));
 
@@ -590,15 +754,17 @@ namespace
                     CollisionNode = OverrideCollisionNode;
                 }
             }
-            RuntimeTool.UnrealAnchorTransform = FTransform(Override->UnrealRotation, Override->UnrealTranslation, FVector::OneVector);
-            RuntimeTool.SofaScale = FMath::IsNearlyZero(Override->SofaScale) ? 10.0f : Override->SofaScale;
+
+            RuntimeTool.SofaScale = FMath::IsNearlyZero(Override->SofaScale) ? 1.0f : Override->SofaScale;
             RuntimeTool.bVisible = Override->bVisible;
         }
-        else {
-            RuntimeTool.UnrealAnchorTransform = FTransform::Identity;
-            RuntimeTool.SofaScale = 10.0f;
+        else
+        {
+            RuntimeTool.SofaScale = 1.0f;
             RuntimeTool.bVisible = true;
         }
+        TryBuildInitialLocalTransformFromMechanicalObject(NodeDef, RuntimeTool.SofaScale, RuntimeTool.SofaScale3D, RuntimeTool.InitialLocalTransform);
+
         return RuntimeTool;
     }
 

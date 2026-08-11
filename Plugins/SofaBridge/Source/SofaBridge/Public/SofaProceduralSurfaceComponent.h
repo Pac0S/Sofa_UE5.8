@@ -32,11 +32,22 @@ public:
         return ProceduralMesh;
     }
 
+    UFUNCTION(BlueprintCallable, Category = "SOFA|Material")
+    void SetBaseMaterial(UMaterialInterface* InBaseMaterial)
+    {
+        BaseMaterial = InBaseMaterial;
+    }
+
     UFUNCTION(BlueprintCallable, Category="SOFA")
     void SetMaterialPath(const FString& InMaterialPath);
 
     UFUNCTION(BlueprintCallable, Category="SOFA")
     bool InitializeMaterial();
+
+    UFUNCTION(BlueprintCallable, Category = "SOFA")
+    void SetVisibility(bool bVisible, bool bPropagateToChildren = true);
+
+    UProceduralMeshComponent* GetProceduralMeshComponent() const { return ProceduralMesh; }
 
 protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SOFA")

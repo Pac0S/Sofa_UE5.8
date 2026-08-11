@@ -53,6 +53,9 @@ void USofaProceduralSurfaceComponent::EnsureProceduralMesh()
     if (USceneComponent* RootComp = Owner->GetRootComponent())
     {
         ProceduralMesh->AttachToComponent(RootComp, FAttachmentTransformRules::KeepRelativeTransform);
+        ProceduralMesh->SetRelativeLocation(FVector::ZeroVector);
+        ProceduralMesh->SetRelativeRotation(FRotator::ZeroRotator);
+        ProceduralMesh->SetRelativeScale3D(FVector::OneVector);
     }
     else
     {
@@ -220,11 +223,10 @@ bool USofaProceduralSurfaceComponent::BuildProcMeshBuffers(
     OutVertexColors.Reset();
     OutTangents.Reset();
 
-    if (State.SurfaceMesh.Vertices.Num() == 0 || State.SurfaceTriangles.Num() == 0)
+    if (State.SurfaceMesh.Vertices.Num() == 0 || State.SurfaceMesh.Triangles.Num() == 0)
     {
         return false;
     }
-    if(State.SurfaceMesh.Vertices.Num())
 
     OutVertices.Reserve(State.SurfaceMesh.Vertices.Num());
     OutUV0.Reserve(State.SurfaceMesh.Vertices.Num());
@@ -347,4 +349,30 @@ void USofaProceduralSurfaceComponent::ComputeTangents(
 
         OutTangents.Add(FProcMeshTangent(TangentX, false));
     }
+}
+
+void USofaProceduralSurfaceComponent::SetVisibility(bool bVisible, bool bPropagateToChildren)
+{
+    EnsureProceduralMesh();
+
+    if (!ProceduralMesh)
+    {
+        UE_LOG(LogProceduralSurfaceComponent, Verbose,
+            TEXT("SetVisibility: ProceduralMesh is null."));
+        return;
+    }
+
+    ProceduralMesh->SetVisibility(bVisible, bPropagateToChildren);
+    ProceduralMesh->SetHiddenInGame(!bVisible, bPropagateToChildren);
+
+    if (bCreateCollision)
+    {
+        ProceduralMesh->SetCollisionEnabled(
+            bVisible ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+    }
+
+    UE_LOG(LogProceduralSurfaceComponent, Verbose,
+        TEXT("SetVisibility: visibility=%s for actor '%s'"),
+        bVisible ? TEXT("true") : TEXT("false"),
+        GetOwner() ? *GetOwner()->GetName() : TEXT("None"));
 }
